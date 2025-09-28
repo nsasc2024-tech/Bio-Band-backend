@@ -45,14 +45,36 @@ class TursoManager:
             )
         ''')
     
-    def create_user(self, full_name, email):
-        result = self.db.execute("INSERT INTO users (full_name, email) VALUES (?, ?) RETURNING id", [full_name, email])
+    def create_family(self, family_name, family_code):
+        result = self.db.execute("INSERT INTO families (family_name, family_code) VALUES (?, ?) RETURNING id", [family_name, family_code])
+        family_id = result.fetchone()[0]
+        return {"id": family_id, "family_name": family_name, "family_code": family_code}
+    
+    def get_all_families(self):
+        result = self.db.execute("SELECT * FROM families")
+        return [{"id": f[0], "family_name": f[1], "family_code": f[2], "created_at": f[3]} for f in result.fetchall()]
+    
+    def get_family_members(self, family_id):
+        result = self.db.execute("SELECT * FROM users WHERE family_id = ?", [family_id])
+        return [{"id": u[0], "full_name": u[1], "email": u[2], "family_id": u[3], "role": u[4], "created_at": u[5]} for u in result.fetchall()]
+    
+    def create_family_invitation(self, family_id, email):
+        result = self.db.execute("INSERT INTO family_invitations (family_id, email) VALUES (?, ?) RETURNING id", [family_id, email])
+        invite_id = result.fetchone()[0]
+        return {"id": invite_id, "family_id": family_id, "email": email, "status": "pending"}
+    
+    def get_user_invitations(self, email):
+        result = self.db.execute("SELECT * FROM family_invitations WHERE email = ? AND status = 'pending'", [email])
+        return [{"id": i[0], "family_id": i[1], "email": i[2], "status": i[3], "created_at": i[4]} for i in result.fetchall()]
+    
+    def create_user(self, full_name, email, family_id=None, role="member"):
+        result = self.db.execute("INSERT INTO users (full_name, email, family_id, role) VALUES (?, ?, ?, ?) RETURNING id", [full_name, email, family_id, role])
         user_id = result.fetchone()[0]
-        return {"id": user_id, "full_name": full_name, "email": email}
+        return {"id": user_id, "full_name": full_name, "email": email, "family_id": family_id, "role": role}
     
     def get_all_users(self):
         result = self.db.execute("SELECT * FROM users")
-        return [{"id": u[0], "full_name": u[1], "email": u[2], "created_at": u[3]} for u in result.fetchall()]
+        return [{"id": u[0], "full_name": u[1], "email": u[2], "family_id": u[3], "role": u[4], "created_at": u[5]} for u in result.fetchall()]
     
     def create_device(self, device_id, user_id, model):
         self.db.execute("INSERT INTO devices (device_id, user_id, model) VALUES (?, ?, ?)", [device_id, user_id, model])

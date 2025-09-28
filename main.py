@@ -8,13 +8,18 @@ app = FastAPI()
 @app.get("/")
 def root():
     return {
-        "message": "Health Monitoring API",
+        "message": "Health Monitoring API with Family Features",
         "endpoints": {
+            "POST /families/": "Create family",
+            "GET /families/all": "Get all families",
+            "GET /families/{family_id}/members": "Get family members",
+            "POST /families/invite": "Invite to family",
+            "GET /families/invitations/{email}": "Get user invitations",
             "POST /users/": "Create user",
-            "POST /devices/": "Register device",
-            "POST /device-data/": "Add device data",
             "GET /users/all": "Get all users",
+            "POST /devices/": "Register device",
             "GET /devices/all": "Get all devices",
+            "POST /device-data/": "Add device data",
             "GET /device-data/all": "Get all device data",
             "GET /device-data/latest/{device_id}": "Get latest data for device",
             "GET /device-data/{device_id}": "Get all data for device"
@@ -22,9 +27,15 @@ def root():
     }
 
 # Pydantic models
+class FamilyCreate(BaseModel):
+    family_name: str
+    family_code: str
+
 class UserCreate(BaseModel):
     full_name: str
     email: str
+    family_id: Optional[int] = None
+    role: Optional[str] = "member"
 
 class DeviceCreate(BaseModel):
     device_id: str
@@ -40,13 +51,39 @@ class DeviceDataCreate(BaseModel):
     calories: Optional[int] = None
     activity: Optional[str] = None
 
+class FamilyInvite(BaseModel):
+    family_id: int
+    email: str
+
+# Family endpoints
+@app.post("/families/")
+def create_family(family: FamilyCreate):
+    return db_manager.create_family(family.family_name, family.family_code)
+
+@app.get("/families/all")
+def get_all_families():
+    return db_manager.get_all_families()
+
+@app.get("/families/{family_id}/members")
+def get_family_members(family_id: int):
+    return db_manager.get_family_members(family_id)
+
+@app.post("/families/invite")
+def invite_to_family(invite: FamilyInvite):
+    return db_manager.create_family_invitation(invite.family_id, invite.email)
+
+@app.get("/families/invitations/{email}")
+def get_user_invitations(email: str):
+    return db_manager.get_user_invitations(email)
+
+# User endpoints
 @app.get("/users/all")
 def get_all_users():
     return db_manager.get_all_users()
 
 @app.post("/users/")
 def create_user(user: UserCreate):
-    return db_manager.create_user(user.full_name, user.email)
+    return db_manager.create_user(user.full_name, user.email, user.family_id, user.role)
 
 @app.get("/devices/all")
 def get_all_devices():
@@ -92,15 +129,18 @@ def test_db():
 
 @app.get("/debug/database")
 def view_database():
+    families = db_manager.get_all_families()
     users = db_manager.get_all_users()
     devices = db_manager.get_all_devices()
     device_data = db_manager.get_all_device_data()
     
     return {
+        "families": families,
         "users": users,
         "devices": devices,
         "device_data": device_data,
         "counts": {
+            "families": len(families),
             "users": len(users),
             "devices": len(devices),
             "device_data": len(device_data)
