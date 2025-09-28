@@ -1,9 +1,9 @@
 import os
-from libsql_experimental import libsql
+import libsql_experimental
 
 class TursoManager:
     def __init__(self):
-        self.db = libsql.connect(
+        self.db = libsql_experimental.connect(
             url=os.getenv("TURSO_DB_URL"),
             auth_token=os.getenv("TURSO_DB_TOKEN")
         )
