@@ -1,133 +1,50 @@
-from http.server import BaseHTTPRequestHandler
-import json
-import urllib.parse
-from datetime import datetime
+from fastapi import FastAPI
+from pydantic import BaseModel
+from libsql_experimental import create_client
 
-# In-memory storage
-users = []
-devices = []
-device_data = []
+app = FastAPI()
 
-class handler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        parsed_path = urllib.parse.urlparse(self.path)
-        path = parsed_path.path
-        
-        self.send_response(200)
-        self.send_header('Content-type', 'application/json')
-        self.end_headers()
-        
-        if path == '/users/all':
-            self.wfile.write(json.dumps(users).encode())
-        elif path == '/devices/all':
-            self.wfile.write(json.dumps(devices).encode())
-        elif path == '/device-data/all':
-            self.wfile.write(json.dumps(device_data).encode())
-        elif path.startswith('/device-data/latest/'):
-            device_id = path.split('/')[-1]
-            device_records = [d for d in device_data if d["device_id"] == device_id]
-            if device_records:
-                self.wfile.write(json.dumps(device_records[-1]).encode())
-            else:
-                self.wfile.write(json.dumps({"error": "No data found"}).encode())
-        elif path.startswith('/device-data/'):
-            device_id = path.split('/')[-1]
-            device_records = [d for d in device_data if d["device_id"] == device_id]
-            self.wfile.write(json.dumps(device_records).encode())
-        else:
-            response = {
-                "message": "Health Monitoring API",
-                "endpoints": {
-                    "POST /users/": "Create user",
-                    "POST /devices/": "Register device",
-                    "POST /device-data/": "Add device data",
-                    "GET /users/all": "Get all users",
-                    "GET /devices/all": "Get all devices",
-                    "GET /device-data/all": "Get all device data",
-                    "GET /device-data/latest/{device_id}": "Get latest data for device",
-                    "GET /device-data/{device_id}": "Get all data for device"
-                }
-            }
-            self.wfile.write(json.dumps(response).encode())
+# Turso Database Manager
+class TursoManager:
+    def __init__(self):
+        self.db = create_client(
+            url="libsql://bio-hand-praveen123.aws-ap-south-1.turso.io",
+            auth_token="eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicm8iLCJpYXQiOjE3NTkwODAyMTMsImlkIjoiNDcyMWI0MzItODgyYi00MTVkLWI3YzQtNWQyZjk5ZTFkODVlIiwicmlkIjoiYjM4YTdkNjctNzcwMi00OTIxLWIwOTEtZTI0ODI2MzIyNmJmIn0.i8h9_arPOgflWPMGsC5jwTOa97g3ICpr7Q1z5c-6TLCzXLU__j5UEgcSj5dc-vd_1fpv2I7Pxq4FnXDGCYSPDQ"
+        )
     
-    def do_POST(self):
-        parsed_path = urllib.parse.urlparse(self.path)
-        path = parsed_path.path
-        
-        content_length = int(self.headers['Content-Length'])
-        post_data = self.rfile.read(content_length)
-        
-        try:
-            if content_length == 0:
-                self.send_response(400)
-                self.send_header('Content-type', 'application/json')
-                self.end_headers()
-                error = {"error": "No data provided"}
-                self.wfile.write(json.dumps(error).encode())
-                return
-                
-            data = json.loads(post_data.decode('utf-8'))
-            
-            if path == '/users/':
-                if not data.get("full_name") or not data.get("email"):
-                    response = {"error": "full_name and email are required"}
-                else:
-                    user_id = len(users) + 1
-                    new_user = {
-                        "user_id": user_id,
-                        "full_name": data.get("full_name"),
-                        "email": data.get("email"),
-                        "created_at": datetime.now().isoformat()
-                    }
-                    users.append(new_user)
-                    response = new_user
-            elif path == '/devices/':
-                if not data.get("device_id") or not data.get("user_id") or not data.get("model"):
-                    response = {"error": "device_id, user_id and model are required"}
-                else:
-                    new_device = {
-                        "device_id": data.get("device_id"),
-                        "user_id": data.get("user_id"),
-                        "model": data.get("model"),
-                        "registered_at": datetime.now().isoformat()
-                    }
-                    devices.append(new_device)
-                    response = new_device
-            elif path == '/device-data/':
-                if not data.get("device_id"):
-                    response = {"error": "device_id is required"}
-                else:
-                    data_id = len(device_data) + 1
-                    new_data = {
-                        "data_id": data_id,
-                        "device_id": data.get("device_id"),
-                        "timestamp": datetime.now().isoformat(),
-                        "heart_rate": data.get("heart_rate"),
-                        "spo2": data.get("spo2"),
-                        "temperature": data.get("temperature"),
-                        "steps": data.get("steps"),
-                        "calories": data.get("calories"),
-                        "activity": data.get("activity")
-                    }
-                    device_data.append(new_data)
-                    response = new_data
-            else:
-                response = {"error": "Endpoint not found"}
-            
-            self.send_response(200)
-            self.send_header('Content-type', 'application/json')
-            self.end_headers()
-            self.wfile.write(json.dumps(response).encode())
-        except json.JSONDecodeError:
-            self.send_response(400)
-            self.send_header('Content-type', 'application/json')
-            self.end_headers()
-            error = {"error": "Invalid JSON format"}
-            self.wfile.write(json.dumps(error).encode())
-        except Exception as e:
-            self.send_response(500)
-            self.send_header('Content-type', 'application/json')
-            self.end_headers()
-            error = {"error": f"Server error: {str(e)}"}
-            self.wfile.write(json.dumps(error).encode())
+    def create_family(self, family_name, family_code):
+        result = self.db.execute("INSERT INTO families (family_name, family_code) VALUES (?, ?) RETURNING id", [family_name, family_code])
+        family_id = result.fetchone()[0]
+        return {"id": family_id, "family_name": family_name, "family_code": family_code}
     
+    def get_all_families(self):
+        result = self.db.execute("SELECT * FROM families")
+        return [{"id": f[0], "family_name": f[1], "family_code": f[2], "created_at": f[3]} for f in result.fetchall()]
+
+db_manager = TursoManager()
+
+# Pydantic models
+class FamilyCreate(BaseModel):
+    family_name: str
+    family_code: str
+
+@app.get("/")
+def root():
+    return {
+        "message": "Bio Hand API with Family Features - Working!",
+        "endpoints": {
+            "POST /families/": "Create family",
+            "GET /families/all": "Get all families"
+        }
+    }
+
+@app.post("/families/")
+def create_family(family: FamilyCreate):
+    return db_manager.create_family(family.family_name, family.family_code)
+
+@app.get("/families/all")
+def get_all_families():
+    return db_manager.get_all_families()
+
+# Vercel handler
+handler = app

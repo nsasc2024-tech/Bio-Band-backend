@@ -8,7 +8,7 @@ app = FastAPI()
 @app.get("/")
 def root():
     return {
-        "message": "Health Monitoring API with Family Features",
+        "message": "Bio Hand API with Family Features - v2.0",
         "endpoints": {
             "POST /families/": "Create family",
             "GET /families/all": "Get all families",
