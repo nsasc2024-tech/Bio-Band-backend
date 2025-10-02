@@ -19,8 +19,13 @@ def execute_sql(sql, params=None):
         "Content-Type": "application/json"
     }
     data = {"statements": [{"q": sql, "params": params or []}]}
-    response = requests.post(f"{DATABASE_URL}/v2/pipeline", headers=headers, json=data)
-    return response.json()
+    try:
+        response = requests.post(f"{DATABASE_URL}/v1/execute", headers=headers, json=data, timeout=10)
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        print(f"Turso API Error: {e}")
+        return {"error": str(e)}
 
 app.add_middleware(
     CORSMiddleware,
@@ -118,6 +123,9 @@ def create_user(user: UserCreate):
             [user.full_name, user.email]
         )
         
+        # Debug: Log the full response
+        print(f"Turso API Response: {result}")
+        
         if result.get("results") and result["results"][0].get("response", {}).get("result", {}).get("rows"):
             row = result["results"][0]["response"]["result"]["rows"][0]
             new_user = {
@@ -130,13 +138,22 @@ def create_user(user: UserCreate):
             return {
                 "success": True,
                 "message": "User created successfully",
-                "user": new_user
+                "user": new_user,
+                "debug_response": result  # Temporary debug info
             }
         else:
-            raise HTTPException(status_code=500, detail="Failed to create user")
+            return {
+                "success": False,
+                "message": "Failed to create user",
+                "debug_response": result
+            }
             
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+        return {
+            "success": False,
+            "message": f"Database error: {str(e)}",
+            "error_details": str(e)
+        }
 
 @app.post("/health-metrics/")
 def add_health_metric(data: HealthMetricCreate):
