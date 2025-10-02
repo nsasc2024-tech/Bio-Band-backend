@@ -10,8 +10,5 @@
       "src": "/(.*)",
       "dest": "main.py"
     }
-  ],
-  "env": {
-    "TURSO_DATABASE_TOKEN": "@turso_database_token"
-  }
+  ]
 }
