@@ -116,6 +116,7 @@ def create_user(user: UserCreate):
         
         # Insert into Turso database
         conn.execute("INSERT INTO users (full_name, email) VALUES (?, ?)", (user.full_name, user.email))
+        conn.commit()
         
         # Get the created user
         result = conn.execute("SELECT id, full_name, email, created_at FROM users ORDER BY id DESC LIMIT 1")
