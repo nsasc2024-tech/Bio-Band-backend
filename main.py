@@ -3,23 +3,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
-import requests
+import libsql_experimental as libsql
 import os
 
 app = FastAPI(title="Bio Band Health Monitoring API", version="3.0.0")
 
 # Turso Database Configuration
-DATABASE_URL = "https://bioband-praveencoder2007.aws-ap-south-1.turso.io"
+DATABASE_URL = "libsql://bioband-praveencoder2007.aws-ap-south-1.turso.io"
 DATABASE_TOKEN = "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3NTk0MTE4MzUsImlkIjoiZGNlZDhlYTUtN2MyNS00ZTAzLWEzN2UtNDVjZjQ2OWZmMjcxIiwicmlkIjoiOTMyMTRhZmYtMDZkOC00NTNkLWEyNjctOWQwYzU2YTk0MGExIn0.0vt_L-LEz-MYSict3sRRruoPDYKcvk-KGJT455_YXZ0xwb63uBPVhcIzANTiSf144BRafeWKxXLeo67RBdP2CQ"
 
-def execute_turso_query(sql):
-    headers = {
-        "Authorization": f"Bearer {DATABASE_TOKEN}",
-        "Content-Type": "application/json"
-    }
-    data = {"sql": sql}
-    response = requests.post(f"{DATABASE_URL}/v2/pipeline", headers=headers, json=data)
-    return response.json()
+def get_db_connection():
+    return libsql.connect(DATABASE_URL, auth_token=DATABASE_TOKEN)
 
 app.add_middleware(
     CORSMiddleware,
@@ -70,18 +64,19 @@ def get_user_from_device(device_id: str) -> int:
 @app.get("/users/")
 def get_all_users():
     try:
-        result = execute_turso_query("SELECT id, full_name, email, created_at FROM users ORDER BY id")
+        conn = get_db_connection()
+        result = conn.execute("SELECT id, full_name, email, created_at FROM users ORDER BY id")
+        rows = result.fetchall()
+        conn.close()
         
         users_data = []
-        if result.get("results") and len(result["results"]) > 0:
-            rows = result["results"][0].get("rows", [])
-            for row in rows:
-                users_data.append({
-                    "id": row[0],
-                    "full_name": row[1],
-                    "email": row[2],
-                    "created_at": row[3]
-                })
+        for row in rows:
+            users_data.append({
+                "id": row[0],
+                "full_name": row[1],
+                "email": row[2],
+                "created_at": row[3]
+            })
         
         return {
             "success": True,
@@ -117,15 +112,17 @@ def get_all_devices():
 @app.post("/users/")
 def create_user(user: UserCreate):
     try:
+        conn = get_db_connection()
+        
         # Insert into Turso database
-        sql = f"INSERT INTO users (full_name, email) VALUES ('{user.full_name}', '{user.email}')"
-        result = execute_turso_query(sql)
+        conn.execute("INSERT INTO users (full_name, email) VALUES (?, ?)", (user.full_name, user.email))
         
         # Get the created user
-        get_result = execute_turso_query("SELECT id, full_name, email, created_at FROM users ORDER BY id DESC LIMIT 1")
+        result = conn.execute("SELECT id, full_name, email, created_at FROM users ORDER BY id DESC LIMIT 1")
+        row = result.fetchone()
+        conn.close()
         
-        if get_result.get("results") and len(get_result["results"]) > 0:
-            row = get_result["results"][0].get("rows", [])[0]
+        if row:
             new_user = {
                 "id": row[0],
                 "full_name": row[1],
