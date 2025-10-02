@@ -6,12 +6,16 @@ from datetime import datetime
 import requests
 import json
 import os
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 app = FastAPI(title="Bio Band Health Monitoring API", version="3.0.0")
 
 # Turso Database Configuration
-DATABASE_URL = "https://bioband-praveencoder2007.aws-ap-south-1.turso.io"
-DATABASE_TOKEN = "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3NTk0MTE4MzUsImlkIjoiZGNlZDhlYTUtN2MyNS00ZTAzLWEzN2UtNDVjZjQ2OWZmMjcxIiwicmlkIjoiOTMyMTRhZmYtMDZkOC00NTNkLWEyNjctOWQwYzU2YTk0MGExIn0.0vt_L-LEz-MYSict3sRRruoPDYKcvk-KGJT455_YXZ0xwb63uBPVhcIzANTiSf144BRafeWKxXLeo67RBdP2CQ"
+DATABASE_URL = os.getenv("TURSO_DB_URL", "https://bioband-praveencoder2007.aws-ap-south-1.turso.io")
+DATABASE_TOKEN = os.getenv("TURSO_DB_TOKEN")
 
 def execute_turso_sql(sql, params=None):
     headers = {
@@ -19,26 +23,27 @@ def execute_turso_sql(sql, params=None):
         "Content-Type": "application/json"
     }
     
-    if params:
-        data = {
-            "statements": [
-                {
-                    "q": sql,
-                    "params": params
+    # Use the correct Turso HTTP API format
+    data = {
+        "requests": [
+            {
+                "type": "execute",
+                "stmt": {
+                    "sql": sql
                 }
-            ]
-        }
-    else:
-        data = {
-            "statements": [
-                {
-                    "q": sql
-                }
-            ]
-        }
+            }
+        ]
+    }
     
-    response = requests.post(f"{DATABASE_URL}/v2/pipeline", headers=headers, json=data)
-    return response.json()
+    if params:
+        data["requests"][0]["stmt"]["args"] = params
+    
+    try:
+        response = requests.post(f"{DATABASE_URL}/v2/pipeline", headers=headers, json=data, timeout=10)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        raise Exception(f"Database connection failed: {str(e)}")
 
 app.add_middleware(
     CORSMiddleware,
