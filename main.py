@@ -6,7 +6,7 @@ from datetime import datetime
 import sqlite3
 import os
 
-app = FastAPI(title="Bio Band Health Monitoring API", version="2.0.0")
+app = FastAPI(title="Bio Band Health Monitoring API", version="3.0.0")
 
 # Simple in-memory storage for now (will be replaced with actual Turso connection)
 users_db = [
@@ -42,7 +42,7 @@ def root():
     return {
         "message": "Bio Band Health Monitoring API",
         "status": "success",
-        "version": "2.0.0",
+        "version": "3.0.0",
         "database_url": "libsql://bioband-praveencoder2007.aws-ap-south-1.turso.io",
         "endpoints": {
             "GET /users/": "Get all users from Turso",
