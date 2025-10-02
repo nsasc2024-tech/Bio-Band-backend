@@ -116,6 +116,7 @@ def create_user(user: UserCreate):
             "INSERT INTO users (full_name, email) VALUES (?, ?)",
             (user.full_name, user.email)
         )
+        conn.commit()
         
         # Get the inserted user
         user_id = cursor.lastrowid
