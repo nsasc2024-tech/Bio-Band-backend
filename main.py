@@ -8,12 +8,10 @@ import json
 import os
 from dotenv import load_dotenv
 
-# Load environment variables
 load_dotenv()
 
 app = FastAPI(title="Bio Band Health Monitoring API", version="3.0.0")
 
-# Turso Database Configuration
 DATABASE_URL = os.getenv("TURSO_DB_URL", "https://bioband-praveencoder2007.aws-ap-south-1.turso.io")
 DATABASE_TOKEN = os.getenv("TURSO_DB_TOKEN")
 
@@ -23,20 +21,11 @@ def execute_turso_sql(sql, params=None):
         "Content-Type": "application/json"
     }
     
-    # Correct Turso HTTP API format
     stmt = {"sql": sql}
     if params:
-        # Convert params to proper Turso format
         stmt["args"] = [{"type": "text", "value": str(p)} if isinstance(p, str) else {"type": "integer", "value": str(p)} if isinstance(p, int) else {"type": "real", "value": str(p)} for p in params]
     
-    data = {
-        "requests": [
-            {
-                "type": "execute",
-                "stmt": stmt
-            }
-        ]
-    }
+    data = {"requests": [{"type": "execute", "stmt": stmt}]}
     
     try:
         response = requests.post(f"{DATABASE_URL}/v2/pipeline", headers=headers, json=data, timeout=10)
@@ -45,6 +34,9 @@ def execute_turso_sql(sql, params=None):
         return response.json()
     except requests.exceptions.RequestException as e:
         raise Exception(f"Database connection failed: {str(e)}")
+
+def extract_value(item):
+    return item.get('value') if isinstance(item, dict) else item
 
 app.add_middleware(
     CORSMiddleware,
@@ -90,14 +82,6 @@ def root():
         }
     }
 
-def get_activity_type_id(activity_name: str) -> int:
-    activity_map = {"Walking": 1, "Running": 2, "Cycling": 3, "Resting": 4, "Swimming": 5}
-    return activity_map.get(activity_name, 1)
-
-def get_user_from_device(device_id: str) -> int:
-    device_user_map = {"WATCH001": 1, "BB001": 2}
-    return device_user_map.get(device_id, 1)
-
 @app.get("/users/")
 def get_all_users():
     try:
@@ -110,10 +94,10 @@ def get_all_users():
                 rows = response_result["result"]["rows"]
                 for row in rows:
                     users_data.append({
-                        "id": row[0].get('value') if isinstance(row[0], dict) else row[0],
-                        "full_name": row[1].get('value') if isinstance(row[1], dict) else row[1],
-                        "email": row[2].get('value') if isinstance(row[2], dict) else row[2],
-                        "created_at": row[3].get('value') if isinstance(row[3], dict) else row[3]
+                        "id": extract_value(row[0]),
+                        "full_name": extract_value(row[1]),
+                        "email": extract_value(row[2]),
+                        "created_at": extract_value(row[3])
                     })
         
         return {
@@ -144,12 +128,12 @@ def get_all_devices():
                 rows = response_result["result"]["rows"]
                 for row in rows:
                     devices_data.append({
-                        "id": row[0],
-                        "device_id": row[1],
-                        "user_id": row[2],
-                        "model": row[3],
-                        "status": row[4],
-                        "registered_at": row[5]
+                        "id": extract_value(row[0]),
+                        "device_id": extract_value(row[1]),
+                        "user_id": extract_value(row[2]),
+                        "model": extract_value(row[3]),
+                        "status": extract_value(row[4]),
+                        "registered_at": extract_value(row[5])
                     })
         
         return {
@@ -171,13 +155,11 @@ def get_all_devices():
 @app.post("/users/")
 def create_user(user: UserCreate):
     try:
-        # Insert into Turso database
         execute_turso_sql(
             "INSERT INTO users (full_name, email) VALUES (?, ?)",
             [user.full_name, user.email]
         )
         
-        # Get the newly created user
         get_result = execute_turso_sql("SELECT id, full_name, email, created_at FROM users WHERE email = ? ORDER BY id DESC LIMIT 1", [user.email])
         
         if get_result.get("results") and len(get_result["results"]) > 0:
@@ -187,10 +169,10 @@ def create_user(user: UserCreate):
                 if len(rows) > 0:
                     row = rows[0]
                     new_user = {
-                        "id": row[0].get('value') if isinstance(row[0], dict) else row[0],
-                        "full_name": row[1].get('value') if isinstance(row[1], dict) else row[1],
-                        "email": row[2].get('value') if isinstance(row[2], dict) else row[2],
-                        "created_at": row[3].get('value') if isinstance(row[3], dict) else row[3]
+                        "id": extract_value(row[0]),
+                        "full_name": extract_value(row[1]),
+                        "email": extract_value(row[2]),
+                        "created_at": extract_value(row[3])
                     }
                     
                     return {
@@ -207,38 +189,35 @@ def create_user(user: UserCreate):
 @app.post("/devices/")
 def register_device(device: DeviceCreate):
     try:
-        # Insert device into Turso database
-        insert_result = execute_turso_sql(
+        execute_turso_sql(
             "INSERT INTO devices (device_id, user_id, model) VALUES (?, ?, ?)",
             [device.device_id, device.user_id, device.model]
         )
         
-        if insert_result.get("results") and len(insert_result["results"]) > 0:
-            # Get the newly created device
-            get_result = execute_turso_sql("SELECT id, device_id, user_id, model, status, registered_at FROM devices ORDER BY id DESC LIMIT 1")
-            
-            if get_result.get("results") and len(get_result["results"]) > 0:
-                response_result = get_result["results"][0].get("response", {})
-                if "result" in response_result and "rows" in response_result["result"]:
-                    rows = response_result["result"]["rows"]
-                    if len(rows) > 0:
-                        row = rows[0]
-                        new_device = {
-                            "id": row[0],
-                            "device_id": row[1],
-                            "user_id": row[2],
-                            "model": row[3],
-                            "status": row[4],
-                            "registered_at": row[5]
-                        }
-                        
-                        return {
-                            "success": True,
-                            "message": "Device registered successfully in Turso",
-                            "device": new_device
-                        }
+        get_result = execute_turso_sql("SELECT id, device_id, user_id, model, status, registered_at FROM devices WHERE device_id = ? ORDER BY id DESC LIMIT 1", [device.device_id])
         
-        return {"success": False, "message": "Failed to register device", "debug": insert_result}
+        if get_result.get("results") and len(get_result["results"]) > 0:
+            response_result = get_result["results"][0].get("response", {})
+            if "result" in response_result and "rows" in response_result["result"]:
+                rows = response_result["result"]["rows"]
+                if len(rows) > 0:
+                    row = rows[0]
+                    new_device = {
+                        "id": extract_value(row[0]),
+                        "device_id": extract_value(row[1]),
+                        "user_id": extract_value(row[2]),
+                        "model": extract_value(row[3]),
+                        "status": extract_value(row[4]),
+                        "registered_at": extract_value(row[5])
+                    }
+                    
+                    return {
+                        "success": True,
+                        "message": "Device registered successfully in Turso",
+                        "device": new_device
+                    }
+        
+        return {"success": False, "message": "Failed to register device"}
         
     except Exception as e:
         return {"success": False, "message": f"Error: {str(e)}"}
@@ -246,45 +225,39 @@ def register_device(device: DeviceCreate):
 @app.post("/health-metrics/")
 def add_health_metric(data: HealthMetricCreate):
     try:
-        # Get user_id from device_id (you might want to query devices table for this)
-        user_id = get_user_from_device(data.device_id)
-        
-        # Insert into Turso database
-        insert_result = execute_turso_sql(
+        execute_turso_sql(
             "INSERT INTO health_metrics (device_id, user_id, heart_rate, spo2, temperature, steps, calories, activity, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            [data.device_id, user_id, data.heart_rate, data.spo2, data.temperature, data.steps, data.calories, data.activity, data.timestamp]
+            [data.device_id, 1, data.heart_rate, data.spo2, data.temperature, data.steps, data.calories, data.activity, data.timestamp]
         )
         
-        if insert_result.get("results") and len(insert_result["results"]) > 0:
-            # Get the newly created health metric
-            get_result = execute_turso_sql("SELECT id, device_id, user_id, heart_rate, spo2, temperature, steps, calories, activity, timestamp FROM health_metrics ORDER BY id DESC LIMIT 1")
-            
-            if get_result.get("results") and len(get_result["results"]) > 0:
-                response_result = get_result["results"][0].get("response", {})
-                if "result" in response_result and "rows" in response_result["result"]:
-                    rows = response_result["result"]["rows"]
-                    if len(rows) > 0:
-                        row = rows[0]
-                        health_metric = {
-                            "id": row[0],
-                            "device_id": row[1],
-                            "user_id": row[2],
-                            "heart_rate": row[3],
-                            "spo2": row[4],
-                            "temperature": row[5],
-                            "steps": row[6],
-                            "calories": row[7],
-                            "activity": row[8],
-                            "timestamp": row[9]
-                        }
-                        
-                        return {
-                            "success": True,
-                            "message": "Health metric recorded successfully in Turso",
-                            "data": health_metric
-                        }
+        get_result = execute_turso_sql("SELECT id, device_id, user_id, heart_rate, spo2, temperature, steps, calories, activity, timestamp FROM health_metrics ORDER BY id DESC LIMIT 1")
         
-        return {"success": False, "message": "Failed to create health metric", "debug": insert_result}
+        if get_result.get("results") and len(get_result["results"]) > 0:
+            response_result = get_result["results"][0].get("response", {})
+            if "result" in response_result and "rows" in response_result["result"]:
+                rows = response_result["result"]["rows"]
+                if len(rows) > 0:
+                    row = rows[0]
+                    health_metric = {
+                        "id": extract_value(row[0]),
+                        "device_id": extract_value(row[1]),
+                        "user_id": extract_value(row[2]),
+                        "heart_rate": extract_value(row[3]),
+                        "spo2": extract_value(row[4]),
+                        "temperature": extract_value(row[5]),
+                        "steps": extract_value(row[6]),
+                        "calories": extract_value(row[7]),
+                        "activity": extract_value(row[8]),
+                        "timestamp": extract_value(row[9])
+                    }
+                    
+                    return {
+                        "success": True,
+                        "message": "Health metric recorded successfully in Turso",
+                        "data": health_metric
+                    }
+        
+        return {"success": False, "message": "Failed to create health metric"}
         
     except Exception as e:
         return {"success": False, "message": f"Error: {str(e)}"}
@@ -301,16 +274,16 @@ def get_all_health_metrics():
                 rows = response_result["result"]["rows"]
                 for row in rows:
                     health_data.append({
-                        "id": row[0],
-                        "device_id": row[1],
-                        "user_id": row[2],
-                        "heart_rate": row[3],
-                        "spo2": row[4],
-                        "temperature": row[5],
-                        "steps": row[6],
-                        "calories": row[7],
-                        "activity": row[8],
-                        "timestamp": row[9]
+                        "id": extract_value(row[0]),
+                        "device_id": extract_value(row[1]),
+                        "user_id": extract_value(row[2]),
+                        "heart_rate": extract_value(row[3]),
+                        "spo2": extract_value(row[4]),
+                        "temperature": extract_value(row[5]),
+                        "steps": extract_value(row[6]),
+                        "calories": extract_value(row[7]),
+                        "activity": extract_value(row[8]),
+                        "timestamp": extract_value(row[9])
                     })
         
         return {
@@ -344,16 +317,16 @@ def get_device_health_metrics(device_id: str):
                 rows = response_result["result"]["rows"]
                 for row in rows:
                     health_data.append({
-                        "id": row[0],
-                        "device_id": row[1],
-                        "user_id": row[2],
-                        "heart_rate": row[3],
-                        "spo2": row[4],
-                        "temperature": row[5],
-                        "steps": row[6],
-                        "calories": row[7],
-                        "activity": row[8],
-                        "timestamp": row[9]
+                        "id": extract_value(row[0]),
+                        "device_id": extract_value(row[1]),
+                        "user_id": extract_value(row[2]),
+                        "heart_rate": extract_value(row[3]),
+                        "spo2": extract_value(row[4]),
+                        "temperature": extract_value(row[5]),
+                        "steps": extract_value(row[6]),
+                        "calories": extract_value(row[7]),
+                        "activity": extract_value(row[8]),
+                        "timestamp": extract_value(row[9])
                     })
         
         return {
