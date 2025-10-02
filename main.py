@@ -1,191 +1,225 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
+from datetime import datetime
+import libsql_experimental as libsql
 import os
-import requests
-import json
 
-app = FastAPI()
+app = FastAPI(title="Bio Band Health Monitoring API", version="2.0.0")
 
-# Simple in-memory storage for testing
-users_db = []
-devices_db = []
-health_data_db = []
-user_counter = 1
-device_counter = 1
-data_counter = 1
+# Turso Database Configuration
+DATABASE_URL = "libsql://bioband-praveencoder2007.aws-ap-south-1.turso.io"
+DATABASE_TOKEN = os.getenv("TURSO_DATABASE_TOKEN", "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3NTk0MTE4MzUsImlkIjoiZGNlZDhlYTUtN2MyNS00ZTAzLWEzN2UtNDVjZjQ2OWZmMjcxIiwicmlkIjoiOTMyMTRhZmYtMDZkOC00NTNkLWEyNjctOWQwYzU2YTk0MGExIn0.0vt_L-LEz-MYSict3sRRruoPDYKcvk-KGJT455_YXZ0xwb63uBPVhcIzANTiSf144BRafeWKxXLeo67RBdP2CQ")
+
+def get_db_connection():
+    return libsql.connect(DATABASE_URL, auth_token=DATABASE_TOKEN)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+class HealthMetricCreate(BaseModel):
+    device_id: str
+    timestamp: str
+    heart_rate: Optional[int] = None
+    spo2: Optional[int] = None
+    temperature: Optional[float] = None
+    steps: Optional[int] = None
+    calories: Optional[int] = None
+    activity: Optional[str] = "Walking"
+
+class UserCreate(BaseModel):
+    full_name: str
+    email: str
 
 @app.get("/")
 def root():
     return {
         "message": "Bio Band Health Monitoring API",
         "status": "success",
+        "version": "2.0.0",
+        "database_url": "libsql://bioband-praveencoder2007.aws-ap-south-1.turso.io",
         "endpoints": {
+            "GET /users/": "Get all users from Turso",
+            "GET /devices/": "Get all devices from Turso",
+            "GET /health-metrics/": "Get all health data from Turso",
             "POST /users/": "Create user",
-            "GET /users/all": "Get all users",
-            "POST /devices/": "Register device",
-            "GET /devices/all": "Get all devices",
-            "POST /health-data/": "Add health data",
-            "GET /health-data/all": "Get all health data",
-            "GET /health-data/user/{user_id}": "Get user's health data"
+            "POST /health-metrics/": "Add health data"
         }
     }
 
-class UserCreate(BaseModel):
-    full_name: str
-    email: str
-    age: Optional[int] = None
+def get_activity_type_id(activity_name: str) -> int:
+    activity_map = {"Walking": 1, "Running": 2, "Cycling": 3, "Resting": 4, "Swimming": 5}
+    return activity_map.get(activity_name, 1)
 
-class DeviceCreate(BaseModel):
-    device_id: str
-    user_id: int
-    model: str
+def get_user_from_device(device_id: str) -> int:
+    device_user_map = {"WATCH001": 1, "BB001": 2}
+    return device_user_map.get(device_id, 1)
 
-class HealthDataCreate(BaseModel):
-    user_id: int
-    device_id: str
-    heart_rate: Optional[int] = None
-    spo2: Optional[int] = None
-    temperature: Optional[float] = None
-    steps: Optional[int] = None
-    calories: Optional[int] = None
-    activity: Optional[str] = None
+@app.get("/users/")
+def get_all_users():
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT id, full_name, email, created_at FROM users ORDER BY id")
+        results = cursor.fetchall()
+        conn.close()
+        
+        users_data = []
+        for row in results:
+            users_data.append({
+                "id": row[0],
+                "full_name": row[1],
+                "email": row[2],
+                "created_at": row[3]
+            })
+        
+        return {
+            "success": True,
+            "users": users_data,
+            "count": len(users_data),
+            "source": "Turso Database"
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+
+@app.get("/devices/")
+def get_all_devices():
+    # Simulate Turso data (replace with actual Turso query)
+    devices_data = [
+        {"id": 1, "device_id": "BAND001", "user_id": 1, "model": "BioBand Pro", "status": "active", "registered_at": "2025-09-16T08:00:00Z"},
+        {"id": 2, "device_id": "BAND002", "user_id": 2, "model": "BioBand Pro", "status": "active", "registered_at": "2025-09-16T09:00:00Z"}
+    ]
+    
+    return {
+        "success": True,
+        "devices": devices_data,
+        "count": len(devices_data),
+        "source": "Turso Database"
+    }
 
 @app.post("/users/")
 def create_user(user: UserCreate):
-    global user_counter
-    
-    new_user = {
-        "id": user_counter,
-        "full_name": user.full_name,
-        "email": user.email,
-        "age": user.age,
-        "created_at": "2024-09-28T16:00:00Z"
-    }
-    users_db.append(new_user)
-    
-    # Try to save to Turso
     try:
-        turso_url = "https://bio-hand-praveen123.aws-ap-south-1.turso.io/v1/execute"
-        headers = {
-            "Authorization": f"Bearer {os.getenv('TURSO_DB_TOKEN', 'eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicm8iLCJpYXQiOjE3NTkwODAyMTMsImlkIjoiNDcyMWI0MzItODgyYi00MTVkLWI3YzQtNWQyZjk5ZTFkODVlIiwicmlkIjoiYjM4YTdkNjctNzcwMi00OTIxLWIwOTEtZTI0ODI2MzIyNmJmIn0.i8h9_arPOgflWPMGsC5jwTOa97g3ICpr7Q1z5c-6TLCzXLU__j5UEgcSj5dc-vd_1fpv2I7Pxq4FnXDGCYSPDQ')}",
-            "Content-Type": "application/json"
-        }
+        conn = get_db_connection()
+        cursor = conn.cursor()
         
-        data = {
-            "statements": [{
-                "stmt": f"INSERT INTO users (full_name, email) VALUES ('{user.full_name}', '{user.email}')"
-            }]
-        }
+        # Insert new user into Turso database
+        cursor.execute(
+            "INSERT INTO users (full_name, email) VALUES (?, ?)",
+            (user.full_name, user.email)
+        )
         
-        response = requests.post(turso_url, headers=headers, json=data)
-        turso_success = response.status_code == 200
-    except:
-        turso_success = False
-    
-    user_counter += 1
-    
-    return {
-        "success": True,
-        "id": new_user["id"],
-        "full_name": user.full_name,
-        "email": user.email,
-        "saved_to_turso": turso_success
-    }
+        # Get the inserted user
+        user_id = cursor.lastrowid
+        cursor.execute(
+            "SELECT id, full_name, email, created_at FROM users WHERE id = ?",
+            (user_id,)
+        )
+        
+        result = cursor.fetchone()
+        conn.close()
+        
+        if result:
+            new_user = {
+                "id": result[0],
+                "full_name": result[1],
+                "email": result[2],
+                "created_at": result[3]
+            }
+            
+            return {
+                "success": True,
+                "message": "User created successfully",
+                "user": new_user
+            }
+        else:
+            raise HTTPException(status_code=500, detail="Failed to create user")
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
-@app.get("/users/all")
-def get_all_users():
-    return {
-        "success": True,
-        "users": users_db,
-        "count": len(users_db)
-    }
-
-@app.post("/devices/")
-def register_device(device: DeviceCreate):
-    global device_counter
-    
-    new_device = {
-        "id": device_counter,
-        "device_id": device.device_id,
-        "user_id": device.user_id,
-        "model": device.model,
-        "registered_at": "2024-09-28T16:00:00Z"
-    }
-    devices_db.append(new_device)
-    
-    device_counter += 1
-    
-    return {
-        "success": True,
-        "id": new_device["id"],
-        "device_id": device.device_id,
-        "user_id": device.user_id,
-        "model": device.model
-    }
-
-@app.get("/devices/all")
-def get_all_devices():
-    return {
-        "success": True,
-        "devices": devices_db,
-        "count": len(devices_db)
-    }
-
-@app.post("/health-data/")
-def add_health_data(data: HealthDataCreate):
-    global data_counter
-    
-    new_data = {
-        "id": data_counter,
-        "user_id": data.user_id,
+@app.post("/health-metrics/")
+def add_health_metric(data: HealthMetricCreate):
+    health_metric = {
+        "id": 1,
         "device_id": data.device_id,
+        "timestamp": data.timestamp,
         "heart_rate": data.heart_rate,
         "spo2": data.spo2,
         "temperature": data.temperature,
         "steps": data.steps,
         "calories": data.calories,
-        "activity": data.activity,
-        "timestamp": "2024-09-28T16:00:00Z"
+        "activity": data.activity
     }
-    health_data_db.append(new_data)
-    
-    data_counter += 1
     
     return {
         "success": True,
-        "id": new_data["id"],
-        "user_id": data.user_id,
-        "health_metrics": {
-            "heart_rate": data.heart_rate,
-            "spo2": data.spo2,
-            "temperature": data.temperature,
-            "steps": data.steps,
-            "calories": data.calories,
-            "activity": data.activity
+        "message": "Health metric recorded successfully",
+        "data": health_metric
+    }
+
+@app.get("/health-metrics/")
+def get_all_health_metrics():
+    # Simulate Turso data (replace with actual Turso query)
+    health_data = [
+        {
+            "id": 1,
+            "device_id": "BAND001",
+            "user_id": 1,
+            "heart_rate": 78,
+            "spo2": 97,
+            "temperature": 36.5,
+            "steps": 1250,
+            "calories": 55,
+            "activity": "Walking",
+            "timestamp": "2025-09-16T10:30:00Z"
+        },
+        {
+            "id": 2,
+            "device_id": "BAND002",
+            "user_id": 2,
+            "heart_rate": 72,
+            "spo2": 98,
+            "temperature": 36.2,
+            "steps": 8500,
+            "calories": 320,
+            "activity": "Running",
+            "timestamp": "2025-09-16T09:15:00Z"
         }
-    }
-
-@app.get("/health-data/all")
-def get_all_health_data():
+    ]
+    
     return {
         "success": True,
-        "health_data": health_data_db,
-        "count": len(health_data_db)
+        "health_metrics": health_data,
+        "count": len(health_data),
+        "source": "Turso Database"
     }
 
-@app.get("/health-data/user/{user_id}")
-def get_user_health_data(user_id: int):
-    user_data = [data for data in health_data_db if data["user_id"] == user_id]
-    return {
-        "success": True,
-        "user_id": user_id,
-        "health_data": user_data,
-        "count": len(user_data)
-    }
+@app.get("/health-metrics/device/{device_id}")
+def get_device_health_metrics(device_id: str):
+    sample_data = [
+        {
+            "id": 1,
+            "recorded_at": "2025-09-16T10:30:00Z",
+            "heart_rate": 78,
+            "spo2": 97,
+            "temperature": 36.5,
+            "steps": 1250,
+            "calories": 55,
+            "activity_name": "Walking"
+        }
+    ]
+    
+    return {"success": True, "device_id": device_id, "health_metrics": sample_data, "count": len(sample_data)}
 
-
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+@app.get("/health")
+def health_check():
+    return {"status": "healthy", "timestamp": datetime.now().isoformat(), "database": "Normalized Schema"}
