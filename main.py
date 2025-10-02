@@ -23,24 +23,24 @@ def execute_turso_sql(sql, params=None):
         "Content-Type": "application/json"
     }
     
-    # Use the correct Turso HTTP API format
+    # Correct Turso HTTP API format
+    stmt = {"sql": sql}
+    if params:
+        stmt["args"] = params
+    
     data = {
         "requests": [
             {
                 "type": "execute",
-                "stmt": {
-                    "sql": sql
-                }
+                "stmt": stmt
             }
         ]
     }
     
-    if params:
-        data["requests"][0]["stmt"]["args"] = params
-    
     try:
         response = requests.post(f"{DATABASE_URL}/v2/pipeline", headers=headers, json=data, timeout=10)
-        response.raise_for_status()
+        if response.status_code != 200:
+            raise Exception(f"HTTP {response.status_code}: {response.text}")
         return response.json()
     except requests.exceptions.RequestException as e:
         raise Exception(f"Database connection failed: {str(e)}")
@@ -170,37 +170,35 @@ def get_all_devices():
 @app.post("/users/")
 def create_user(user: UserCreate):
     try:
-        # Insert into Turso database using HTTP API
-        insert_result = execute_turso_sql(
+        # Insert into Turso database
+        execute_turso_sql(
             "INSERT INTO users (full_name, email) VALUES (?, ?)",
             [user.full_name, user.email]
         )
         
-        # Check if insert was successful
-        if insert_result.get("results") and len(insert_result["results"]) > 0:
-            # Get the newly created user
-            get_result = execute_turso_sql("SELECT id, full_name, email, created_at FROM users ORDER BY id DESC LIMIT 1")
-            
-            if get_result.get("results") and len(get_result["results"]) > 0:
-                response_result = get_result["results"][0].get("response", {})
-                if "result" in response_result and "rows" in response_result["result"]:
-                    rows = response_result["result"]["rows"]
-                    if len(rows) > 0:
-                        row = rows[0]
-                        new_user = {
-                            "id": row[0],
-                            "full_name": row[1],
-                            "email": row[2],
-                            "created_at": row[3]
-                        }
-                        
-                        return {
-                            "success": True,
-                            "message": "User created successfully in Turso via HTTP",
-                            "user": new_user
-                        }
+        # Get the newly created user
+        get_result = execute_turso_sql("SELECT id, full_name, email, created_at FROM users WHERE email = ? ORDER BY id DESC LIMIT 1", [user.email])
         
-        return {"success": False, "message": "Failed to create user", "debug": insert_result}
+        if get_result.get("results") and len(get_result["results"]) > 0:
+            response_result = get_result["results"][0].get("response", {})
+            if "result" in response_result and "rows" in response_result["result"]:
+                rows = response_result["result"]["rows"]
+                if len(rows) > 0:
+                    row = rows[0]
+                    new_user = {
+                        "id": row[0].get('value') if isinstance(row[0], dict) else row[0],
+                        "full_name": row[1].get('value') if isinstance(row[1], dict) else row[1],
+                        "email": row[2].get('value') if isinstance(row[2], dict) else row[2],
+                        "created_at": row[3].get('value') if isinstance(row[3], dict) else row[3]
+                    }
+                    
+                    return {
+                        "success": True,
+                        "message": "User created successfully in Turso",
+                        "user": new_user
+                    }
+        
+        return {"success": False, "message": "Failed to create user"}
         
     except Exception as e:
         return {"success": False, "message": f"Error: {str(e)}"}
