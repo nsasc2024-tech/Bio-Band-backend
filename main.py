@@ -26,7 +26,8 @@ def execute_turso_sql(sql, params=None):
     # Correct Turso HTTP API format
     stmt = {"sql": sql}
     if params:
-        stmt["args"] = params
+        # Convert params to proper Turso format
+        stmt["args"] = [{"type": "text", "value": str(p)} if isinstance(p, str) else {"type": "integer", "value": str(p)} if isinstance(p, int) else {"type": "real", "value": str(p)} for p in params]
     
     data = {
         "requests": [
