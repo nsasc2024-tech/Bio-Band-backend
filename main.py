@@ -17,8 +17,8 @@ def execute_turso_query(sql):
         "Authorization": f"Bearer {DATABASE_TOKEN}",
         "Content-Type": "application/json"
     }
-    data = {"statements": [{"q": sql}]}
-    response = requests.post(f"{DATABASE_URL}/v1/execute", headers=headers, json=data)
+    data = {"sql": sql}
+    response = requests.post(f"{DATABASE_URL}/v2/pipeline", headers=headers, json=data)
     return response.json()
 
 app.add_middleware(
@@ -73,8 +73,8 @@ def get_all_users():
         result = execute_turso_query("SELECT id, full_name, email, created_at FROM users ORDER BY id")
         
         users_data = []
-        if result.get("results") and result["results"][0].get("response", {}).get("result", {}).get("rows"):
-            rows = result["results"][0]["response"]["result"]["rows"]
+        if result.get("results") and len(result["results"]) > 0:
+            rows = result["results"][0].get("rows", [])
             for row in rows:
                 users_data.append({
                     "id": row[0],
@@ -124,8 +124,8 @@ def create_user(user: UserCreate):
         # Get the created user
         get_result = execute_turso_query("SELECT id, full_name, email, created_at FROM users ORDER BY id DESC LIMIT 1")
         
-        if get_result.get("results") and get_result["results"][0].get("response", {}).get("result", {}).get("rows"):
-            row = get_result["results"][0]["response"]["result"]["rows"][0]
+        if get_result.get("results") and len(get_result["results"]) > 0:
+            row = get_result["results"][0].get("rows", [])[0]
             new_user = {
                 "id": row[0],
                 "full_name": row[1],
