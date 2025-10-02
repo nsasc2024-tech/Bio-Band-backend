@@ -3,17 +3,42 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
-import libsql_experimental as libsql
+import requests
+import json
 import os
 
 app = FastAPI(title="Bio Band Health Monitoring API", version="3.0.0")
 
 # Turso Database Configuration
-DATABASE_URL = "libsql://bioband-praveencoder2007.aws-ap-south-1.turso.io"
+DATABASE_URL = "https://bioband-praveencoder2007.aws-ap-south-1.turso.io"
 DATABASE_TOKEN = "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3NTk0MTE4MzUsImlkIjoiZGNlZDhlYTUtN2MyNS00ZTAzLWEzN2UtNDVjZjQ2OWZmMjcxIiwicmlkIjoiOTMyMTRhZmYtMDZkOC00NTNkLWEyNjctOWQwYzU2YTk0MGExIn0.0vt_L-LEz-MYSict3sRRruoPDYKcvk-KGJT455_YXZ0xwb63uBPVhcIzANTiSf144BRafeWKxXLeo67RBdP2CQ"
 
-def get_db_connection():
-    return libsql.connect(DATABASE_URL, auth_token=DATABASE_TOKEN)
+def execute_turso_sql(sql, params=None):
+    headers = {
+        "Authorization": f"Bearer {DATABASE_TOKEN}",
+        "Content-Type": "application/json"
+    }
+    
+    if params:
+        data = {
+            "statements": [
+                {
+                    "q": sql,
+                    "params": params
+                }
+            ]
+        }
+    else:
+        data = {
+            "statements": [
+                {
+                    "q": sql
+                }
+            ]
+        }
+    
+    response = requests.post(f"{DATABASE_URL}/v2/pipeline", headers=headers, json=data)
+    return response.json()
 
 app.add_middleware(
     CORSMiddleware,
@@ -64,25 +89,26 @@ def get_user_from_device(device_id: str) -> int:
 @app.get("/users/")
 def get_all_users():
     try:
-        conn = get_db_connection()
-        result = conn.execute("SELECT id, full_name, email, created_at FROM users ORDER BY id")
-        rows = result.fetchall()
-        conn.close()
+        result = execute_turso_sql("SELECT id, full_name, email, created_at FROM users ORDER BY id")
         
         users_data = []
-        for row in rows:
-            users_data.append({
-                "id": row[0],
-                "full_name": row[1],
-                "email": row[2],
-                "created_at": row[3]
-            })
+        if result.get("results") and len(result["results"]) > 0:
+            response_result = result["results"][0].get("response", {})
+            if "result" in response_result and "rows" in response_result["result"]:
+                rows = response_result["result"]["rows"]
+                for row in rows:
+                    users_data.append({
+                        "id": row[0],
+                        "full_name": row[1],
+                        "email": row[2],
+                        "created_at": row[3]
+                    })
         
         return {
             "success": True,
             "users": users_data,
             "count": len(users_data),
-            "source": "Real Turso Database"
+            "source": "Real Turso Database via HTTP"
         }
         
     except Exception as e:
@@ -112,32 +138,37 @@ def get_all_devices():
 @app.post("/users/")
 def create_user(user: UserCreate):
     try:
-        conn = get_db_connection()
+        # Insert into Turso database using HTTP API
+        insert_result = execute_turso_sql(
+            "INSERT INTO users (full_name, email) VALUES (?, ?)",
+            [user.full_name, user.email]
+        )
         
-        # Insert into Turso database
-        conn.execute("INSERT INTO users (full_name, email) VALUES (?, ?)", (user.full_name, user.email))
-        conn.commit()
-        
-        # Get the created user
-        result = conn.execute("SELECT id, full_name, email, created_at FROM users ORDER BY id DESC LIMIT 1")
-        row = result.fetchone()
-        conn.close()
-        
-        if row:
-            new_user = {
-                "id": row[0],
-                "full_name": row[1],
-                "email": row[2],
-                "created_at": row[3]
-            }
+        # Check if insert was successful
+        if insert_result.get("results") and len(insert_result["results"]) > 0:
+            # Get the newly created user
+            get_result = execute_turso_sql("SELECT id, full_name, email, created_at FROM users ORDER BY id DESC LIMIT 1")
             
-            return {
-                "success": True,
-                "message": "User created successfully in Turso",
-                "user": new_user
-            }
+            if get_result.get("results") and len(get_result["results"]) > 0:
+                response_result = get_result["results"][0].get("response", {})
+                if "result" in response_result and "rows" in response_result["result"]:
+                    rows = response_result["result"]["rows"]
+                    if len(rows) > 0:
+                        row = rows[0]
+                        new_user = {
+                            "id": row[0],
+                            "full_name": row[1],
+                            "email": row[2],
+                            "created_at": row[3]
+                        }
+                        
+                        return {
+                            "success": True,
+                            "message": "User created successfully in Turso via HTTP",
+                            "user": new_user
+                        }
         
-        return {"success": False, "message": "Failed to create user"}
+        return {"success": False, "message": "Failed to create user", "debug": insert_result}
         
     except Exception as e:
         return {"success": False, "message": f"Error: {str(e)}"}
