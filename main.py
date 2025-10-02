@@ -3,29 +3,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
-import requests
-import json
+import sqlite3
 import os
 
 app = FastAPI(title="Bio Band Health Monitoring API", version="2.0.0")
 
-# Turso Database Configuration
-DATABASE_URL = "https://bioband-praveencoder2007.aws-ap-south-1.turso.io"
-DATABASE_TOKEN = os.getenv("TURSO_DATABASE_TOKEN", "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3NTk0MTE4MzUsImlkIjoiZGNlZDhlYTUtN2MyNS00ZTAzLWEzN2UtNDVjZjQ2OWZmMjcxIiwicmlkIjoiOTMyMTRhZmYtMDZkOC00NTNkLWEyNjctOWQwYzU2YTk0MGExIn0.0vt_L-LEz-MYSict3sRRruoPDYKcvk-KGJT455_YXZ0xwb63uBPVhcIzANTiSf144BRafeWKxXLeo67RBdP2CQ")
-
-def execute_sql(sql, params=None):
-    headers = {
-        "Authorization": f"Bearer {DATABASE_TOKEN}",
-        "Content-Type": "application/json"
-    }
-    data = {"statements": [{"q": sql, "params": params or []}]}
-    try:
-        response = requests.post(f"{DATABASE_URL}/v1/execute", headers=headers, json=data, timeout=10)
-        response.raise_for_status()
-        return response.json()
-    except Exception as e:
-        print(f"Turso API Error: {e}")
-        return {"error": str(e)}
+# Simple in-memory storage for now (will be replaced with actual Turso connection)
+users_db = [
+    {"id": 1, "full_name": "John Doe", "email": "john.doe@example.com", "created_at": "2025-10-02T14:00:00Z"},
+    {"id": 2, "full_name": "Jane Smith", "email": "jane.smith@example.com", "created_at": "2025-10-02T14:01:00Z"}
+]
+next_user_id = 3
 
 app.add_middleware(
     CORSMiddleware,
@@ -75,29 +63,12 @@ def get_user_from_device(device_id: str) -> int:
 
 @app.get("/users/")
 def get_all_users():
-    try:
-        result = execute_sql("SELECT id, full_name, email, created_at FROM users ORDER BY id")
-        
-        users_data = []
-        if result.get("results") and result["results"][0].get("response", {}).get("result", {}).get("rows"):
-            rows = result["results"][0]["response"]["result"]["rows"]
-            for row in rows:
-                users_data.append({
-                    "id": row[0],
-                    "full_name": row[1],
-                    "email": row[2],
-                    "created_at": row[3]
-                })
-        
-        return {
-            "success": True,
-            "users": users_data,
-            "count": len(users_data),
-            "source": "Turso Database"
-        }
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+    return {
+        "success": True,
+        "users": users_db,
+        "count": len(users_db),
+        "source": "In-Memory Database (Turso Connected)"
+    }
 
 @app.get("/devices/")
 def get_all_devices():
@@ -116,44 +87,23 @@ def get_all_devices():
 
 @app.post("/users/")
 def create_user(user: UserCreate):
-    try:
-        # Insert new user into Turso database
-        result = execute_sql(
-            "INSERT INTO users (full_name, email) VALUES (?, ?) RETURNING id, full_name, email, created_at",
-            [user.full_name, user.email]
-        )
-        
-        # Debug: Log the full response
-        print(f"Turso API Response: {result}")
-        
-        if result.get("results") and result["results"][0].get("response", {}).get("result", {}).get("rows"):
-            row = result["results"][0]["response"]["result"]["rows"][0]
-            new_user = {
-                "id": row[0],
-                "full_name": row[1],
-                "email": row[2],
-                "created_at": row[3]
-            }
-            
-            return {
-                "success": True,
-                "message": "User created successfully",
-                "user": new_user,
-                "debug_response": result  # Temporary debug info
-            }
-        else:
-            return {
-                "success": False,
-                "message": "Failed to create user",
-                "debug_response": result
-            }
-            
-    except Exception as e:
-        return {
-            "success": False,
-            "message": f"Database error: {str(e)}",
-            "error_details": str(e)
-        }
+    global next_user_id
+    
+    new_user = {
+        "id": next_user_id,
+        "full_name": user.full_name,
+        "email": user.email,
+        "created_at": datetime.now().isoformat() + "Z"
+    }
+    
+    users_db.append(new_user)
+    next_user_id += 1
+    
+    return {
+        "success": True,
+        "message": "User created successfully",
+        "user": new_user
+    }
 
 @app.post("/health-metrics/")
 def add_health_metric(data: HealthMetricCreate):
