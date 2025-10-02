@@ -3,17 +3,23 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
-import sqlite3
+import requests
 import os
 
 app = FastAPI(title="Bio Band Health Monitoring API", version="3.0.0")
 
-# Simple in-memory storage for now (will be replaced with actual Turso connection)
-users_db = [
-    {"id": 1, "full_name": "John Doe", "email": "john.doe@example.com", "created_at": "2025-10-02T14:00:00Z"},
-    {"id": 2, "full_name": "Jane Smith", "email": "jane.smith@example.com", "created_at": "2025-10-02T14:01:00Z"}
-]
-next_user_id = 3
+# Turso Database Configuration
+DATABASE_URL = "https://bioband-praveencoder2007.aws-ap-south-1.turso.io"
+DATABASE_TOKEN = "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3NTk0MTE4MzUsImlkIjoiZGNlZDhlYTUtN2MyNS00ZTAzLWEzN2UtNDVjZjQ2OWZmMjcxIiwicmlkIjoiOTMyMTRhZmYtMDZkOC00NTNkLWEyNjctOWQwYzU2YTk0MGExIn0.0vt_L-LEz-MYSict3sRRruoPDYKcvk-KGJT455_YXZ0xwb63uBPVhcIzANTiSf144BRafeWKxXLeo67RBdP2CQ"
+
+def execute_turso_query(sql):
+    headers = {
+        "Authorization": f"Bearer {DATABASE_TOKEN}",
+        "Content-Type": "application/json"
+    }
+    data = {"statements": [{"q": sql}]}
+    response = requests.post(f"{DATABASE_URL}/v1/execute", headers=headers, json=data)
+    return response.json()
 
 app.add_middleware(
     CORSMiddleware,
@@ -63,12 +69,35 @@ def get_user_from_device(device_id: str) -> int:
 
 @app.get("/users/")
 def get_all_users():
-    return {
-        "success": True,
-        "users": users_db,
-        "count": len(users_db),
-        "source": "In-Memory Database (Turso Connected)"
-    }
+    try:
+        result = execute_turso_query("SELECT id, full_name, email, created_at FROM users ORDER BY id")
+        
+        users_data = []
+        if result.get("results") and result["results"][0].get("response", {}).get("result", {}).get("rows"):
+            rows = result["results"][0]["response"]["result"]["rows"]
+            for row in rows:
+                users_data.append({
+                    "id": row[0],
+                    "full_name": row[1],
+                    "email": row[2],
+                    "created_at": row[3]
+                })
+        
+        return {
+            "success": True,
+            "users": users_data,
+            "count": len(users_data),
+            "source": "Real Turso Database"
+        }
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "users": [],
+            "count": 0,
+            "source": "Turso Database Error"
+        }
 
 @app.get("/devices/")
 def get_all_devices():
@@ -87,23 +116,33 @@ def get_all_devices():
 
 @app.post("/users/")
 def create_user(user: UserCreate):
-    global next_user_id
-    
-    new_user = {
-        "id": next_user_id,
-        "full_name": user.full_name,
-        "email": user.email,
-        "created_at": datetime.now().isoformat() + "Z"
-    }
-    
-    users_db.append(new_user)
-    next_user_id += 1
-    
-    return {
-        "success": True,
-        "message": "User created successfully",
-        "user": new_user
-    }
+    try:
+        # Insert into Turso database
+        sql = f"INSERT INTO users (full_name, email) VALUES ('{user.full_name}', '{user.email}')"
+        result = execute_turso_query(sql)
+        
+        # Get the created user
+        get_result = execute_turso_query("SELECT id, full_name, email, created_at FROM users ORDER BY id DESC LIMIT 1")
+        
+        if get_result.get("results") and get_result["results"][0].get("response", {}).get("result", {}).get("rows"):
+            row = get_result["results"][0]["response"]["result"]["rows"][0]
+            new_user = {
+                "id": row[0],
+                "full_name": row[1],
+                "email": row[2],
+                "created_at": row[3]
+            }
+            
+            return {
+                "success": True,
+                "message": "User created successfully in Turso",
+                "user": new_user
+            }
+        
+        return {"success": False, "message": "Failed to create user"}
+        
+    except Exception as e:
+        return {"success": False, "message": f"Error: {str(e)}"}
 
 @app.post("/health-metrics/")
 def add_health_metric(data: HealthMetricCreate):
