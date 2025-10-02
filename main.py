@@ -65,14 +65,13 @@ def get_user_from_device(device_id: str) -> int:
 def get_all_users():
     try:
         conn = get_db_connection()
-        cursor = conn.cursor()
         
-        cursor.execute("SELECT id, full_name, email, created_at FROM users ORDER BY id")
-        results = cursor.fetchall()
+        result = conn.execute("SELECT id, full_name, email, created_at FROM users ORDER BY id")
+        rows = result.fetchall()
         conn.close()
         
         users_data = []
-        for row in results:
+        for row in rows:
             users_data.append({
                 "id": row[0],
                 "full_name": row[1],
@@ -109,31 +108,22 @@ def get_all_devices():
 def create_user(user: UserCreate):
     try:
         conn = get_db_connection()
-        cursor = conn.cursor()
         
         # Insert new user into Turso database
-        cursor.execute(
-            "INSERT INTO users (full_name, email) VALUES (?, ?)",
+        result = conn.execute(
+            "INSERT INTO users (full_name, email) VALUES (?, ?) RETURNING id, full_name, email, created_at",
             (user.full_name, user.email)
         )
-        conn.commit()
         
-        # Get the inserted user
-        user_id = cursor.lastrowid
-        cursor.execute(
-            "SELECT id, full_name, email, created_at FROM users WHERE id = ?",
-            (user_id,)
-        )
-        
-        result = cursor.fetchone()
+        row = result.fetchone()
         conn.close()
         
-        if result:
+        if row:
             new_user = {
-                "id": result[0],
-                "full_name": result[1],
-                "email": result[2],
-                "created_at": result[3]
+                "id": row[0],
+                "full_name": row[1],
+                "email": row[2],
+                "created_at": row[3]
             }
             
             return {
