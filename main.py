@@ -244,7 +244,7 @@ def register_device(device: DeviceCreate):
     except Exception as e:
         return {"success": False, "message": f"Error: {str(e)}"}
 
-
+@app.post("/health-metrics/")
 def add_health_metric(data: HealthMetricCreate):
     try:
         # Get user_id from device_id (you might want to query devices table for this)
