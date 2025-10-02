@@ -109,10 +109,10 @@ def get_all_users():
                 rows = response_result["result"]["rows"]
                 for row in rows:
                     users_data.append({
-                        "id": row[0],
-                        "full_name": row[1],
-                        "email": row[2],
-                        "created_at": row[3]
+                        "id": row[0].get('value') if isinstance(row[0], dict) else row[0],
+                        "full_name": row[1].get('value') if isinstance(row[1], dict) else row[1],
+                        "email": row[2].get('value') if isinstance(row[2], dict) else row[2],
+                        "created_at": row[3].get('value') if isinstance(row[3], dict) else row[3]
                     })
         
         return {
