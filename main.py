@@ -23,7 +23,7 @@ def execute_turso_sql(sql, params=None):
     
     stmt = {"sql": sql}
     if params:
-        stmt["args"] = [{"type": "text", "value": str(p)} if isinstance(p, str) else {"type": "integer", "value": p} if isinstance(p, int) else {"type": "float", "value": p} for p in params]
+        stmt["args"] = [{"type": "text", "value": str(p)} if isinstance(p, str) else {"type": "integer", "value": str(p)} if isinstance(p, int) else {"type": "float", "value": str(p)} for p in params]
     
     data = {"requests": [{"type": "execute", "stmt": stmt}]}
     
@@ -189,10 +189,8 @@ def create_user(user: UserCreate):
 @app.post("/devices/")
 def register_device(device: DeviceCreate):
     try:
-        execute_turso_sql(
-            "INSERT INTO devices (device_id, user_id, model) VALUES (?, ?, ?)",
-            [device.device_id, device.user_id, device.model]
-        )
+        sql = f"INSERT INTO devices (device_id, user_id, model) VALUES ('{device.device_id}', {device.user_id}, '{device.model}')"
+        execute_turso_sql(sql)
         
         get_result = execute_turso_sql("SELECT id, device_id, user_id, model, status, registered_at FROM devices WHERE device_id = ? ORDER BY id DESC LIMIT 1", [device.device_id])
         
@@ -225,10 +223,10 @@ def register_device(device: DeviceCreate):
 @app.post("/health-metrics/")
 def add_health_metric(data: HealthMetricCreate):
     try:
-        execute_turso_sql(
-            "INSERT INTO health_metrics (device_id, user_id, heart_rate, spo2, temperature, steps, calories, activity, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            [data.device_id, 1, data.heart_rate, data.spo2, data.temperature, data.steps, data.calories, data.activity, data.timestamp]
-        )
+        # Use direct SQL without parameters to avoid Turso formatting issues
+        sql = f"INSERT INTO health_metrics (device_id, user_id, heart_rate, spo2, temperature, steps, calories, activity, timestamp) VALUES ('{data.device_id}', 1, {data.heart_rate or 'NULL'}, {data.spo2 or 'NULL'}, {data.temperature or 'NULL'}, {data.steps or 'NULL'}, {data.calories or 'NULL'}, '{data.activity}', '{data.timestamp}')"
+        
+        execute_turso_sql(sql)
         
         get_result = execute_turso_sql("SELECT id, device_id, user_id, heart_rate, spo2, temperature, steps, calories, activity, timestamp FROM health_metrics ORDER BY id DESC LIMIT 1")
         
