@@ -56,7 +56,6 @@ app.add_middleware(
 
 class MessageRequest(BaseModel):
     message: str
-    session_id: str = "default"
 
 class UserCreate(BaseModel):
     full_name: str
@@ -141,11 +140,7 @@ async def health_chat(request: MessageRequest):
         if response.status_code == 200:
             data = response.json()
             ai_response = data["candidates"][0]["content"]["parts"][0]["text"]
-            return {
-                "response": ai_response.strip(),
-                "session_id": request.session_id,
-                "timestamp": datetime.now()
-            }
+            return {"answer": ai_response.strip()}
         else:
             return {"error": f"API Error {response.status_code}: {response.text}"}
             
