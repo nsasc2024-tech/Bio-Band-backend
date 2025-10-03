@@ -326,9 +326,6 @@ def get_health_metrics():
 @app.post("/health-metrics/")
 def create_health_metric(data: HealthMetricCreate):
     try:
-        # Disable foreign keys first
-        execute_sql("PRAGMA foreign_keys = OFF")
-        
         heart_rate_val = data.heart_rate if data.heart_rate is not None else 'NULL'
         spo2_val = data.spo2 if data.spo2 is not None else 'NULL'
         temp_val = data.temperature if data.temperature is not None else 'NULL'
@@ -404,13 +401,10 @@ def debug_database():
 
 @app.post("/debug/create-tables")
 def create_tables():
-    # First disable foreign keys
-    execute_sql("PRAGMA foreign_keys = OFF")
-    
     tables = {
         "users": "CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, full_name TEXT NOT NULL, email TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
-        "devices": "CREATE TABLE IF NOT EXISTS devices (id INTEGER PRIMARY KEY AUTOINCREMENT, device_id TEXT NOT NULL, user_id INTEGER, model TEXT DEFAULT 'BioBand Pro', status TEXT DEFAULT 'active', registered_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
-        "health_metrics": "CREATE TABLE IF NOT EXISTS health_metrics (id INTEGER PRIMARY KEY AUTOINCREMENT, device_id TEXT NOT NULL, user_id INTEGER, heart_rate INTEGER, spo2 INTEGER, temperature REAL, steps INTEGER, calories INTEGER, activity TEXT DEFAULT 'Walking', timestamp DATETIME NOT NULL)"
+        "devices": "CREATE TABLE IF NOT EXISTS devices (id INTEGER PRIMARY KEY AUTOINCREMENT, device_id TEXT NOT NULL, user_id INTEGER REFERENCES users(id), model TEXT DEFAULT 'BioBand Pro', status TEXT DEFAULT 'active', registered_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
+        "health_metrics": "CREATE TABLE IF NOT EXISTS health_metrics (id INTEGER PRIMARY KEY AUTOINCREMENT, device_id TEXT NOT NULL, user_id INTEGER REFERENCES users(id), heart_rate INTEGER, spo2 INTEGER, temperature REAL, steps INTEGER, calories INTEGER, activity TEXT DEFAULT 'Walking', timestamp DATETIME NOT NULL)"
     }
     
     results = {}
@@ -418,8 +412,3 @@ def create_tables():
         results[table_name] = execute_sql(sql)
     
     return {"success": True, "results": results}
-
-@app.post("/debug/disable-fk")
-def disable_foreign_keys():
-    result = execute_sql("PRAGMA foreign_keys = OFF")
-    return {"success": True, "result": result}
