@@ -1,0 +1,27 @@
+name: Deploy to Turso
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Install Turso CLI
+      run: |
+        curl -sSfL https://get.tur.so/install.sh | bash
+        echo "$HOME/.turso/bin" >> $GITHUB_PATH
+    
+    - name: Authenticate Turso
+      run: turso auth token ${{ secrets.TURSO_AUTH_TOKEN }}
+    
+    - name: Run Database Migrations
+      run: |
+        turso db shell bioband-praveencoder2007 < database/schemas/minimal_db.sql
+        turso db shell bioband-praveencoder2007 < database/schemas/chat_messages.sql
