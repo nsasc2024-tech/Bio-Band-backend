@@ -337,11 +337,17 @@ def create_health_metric(data: HealthMetricCreate):
         result = execute_sql(sql)
         
         if "error" in result:
-            return {"success": False, "message": result["error"]}
+            return {"success": False, "message": result["error"], "debug": result}
         
-        return {"success": True, "message": "Health metric created successfully"}
-    except:
-        return {"success": False, "message": "Failed to create health metric"}
+        # Check if insertion was successful by looking at the response
+        if result.get("results") and len(result["results"]) > 0:
+            response_result = result["results"][0].get("response", {})
+            if "result" in response_result:
+                return {"success": True, "message": "Health metric created successfully"}
+        
+        return {"success": False, "message": "Failed to insert data", "debug": result}
+    except Exception as e:
+        return {"success": False, "message": f"Failed to create health metric: {str(e)}"}
 
 @app.get("/health-metrics/{device_id}")
 def get_health_metrics_by_device(device_id: str):
@@ -385,5 +391,24 @@ def debug_database():
     return {
         "database_url": DATABASE_URL[:50] + "..." if DATABASE_URL else "Not set",
         "database_token": "Set" if DATABASE_TOKEN else "Not set",
-        "connection_test": execute_sql("SELECT 1 as test")
+        "connection_test": execute_sql("SELECT 1 as test"),
+        "tables_check": {
+            "users": execute_sql("SELECT name FROM sqlite_master WHERE type='table' AND name='users'"),
+            "devices": execute_sql("SELECT name FROM sqlite_master WHERE type='table' AND name='devices'"),
+            "health_metrics": execute_sql("SELECT name FROM sqlite_master WHERE type='table' AND name='health_metrics'")
+        }
     }
+
+@app.post("/debug/create-tables")
+def create_tables():
+    tables = {
+        "users": "CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, full_name TEXT NOT NULL, email TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
+        "devices": "CREATE TABLE IF NOT EXISTS devices (id INTEGER PRIMARY KEY AUTOINCREMENT, device_id TEXT NOT NULL, user_id INTEGER, model TEXT DEFAULT 'BioBand Pro', status TEXT DEFAULT 'active', registered_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
+        "health_metrics": "CREATE TABLE IF NOT EXISTS health_metrics (id INTEGER PRIMARY KEY AUTOINCREMENT, device_id TEXT NOT NULL, user_id INTEGER, heart_rate INTEGER, spo2 INTEGER, temperature REAL, steps INTEGER, calories INTEGER, activity TEXT DEFAULT 'Walking', timestamp DATETIME NOT NULL)"
+    }
+    
+    results = {}
+    for table_name, sql in tables.items():
+        results[table_name] = execute_sql(sql)
+    
+    return {"success": True, "results": results}
