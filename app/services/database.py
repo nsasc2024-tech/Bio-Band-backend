@@ -7,6 +7,10 @@ load_dotenv()
 DATABASE_URL = os.getenv("TURSO_DB_URL")
 DATABASE_TOKEN = os.getenv("TURSO_DB_TOKEN")
 
+# Convert libsql:// URL to https:// for HTTP API
+if DATABASE_URL and DATABASE_URL.startswith("libsql://"):
+    DATABASE_URL = DATABASE_URL.replace("libsql://", "https://")
+
 def execute_turso_sql(sql, params=None):
     headers = {
         "Authorization": f"Bearer {DATABASE_TOKEN}",
