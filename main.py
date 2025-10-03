@@ -1,17 +1,28 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import requests
 import os
+from datetime import datetime
 
-app = FastAPI()
+app = FastAPI(title="Bio Band Medical API", version="2.0.0", description="Complete health monitoring and AI assistant API")
 
 # Turso Database
 DATABASE_URL = os.getenv("TURSO_DB_URL", "")
 DATABASE_TOKEN = os.getenv("TURSO_DB_TOKEN", "")
 
+# Gemini AI
+API_KEY = os.getenv("GEMINI_API_KEY", "AIzaSyBx4_h7kQdD_zGzIeQ9MctV45S-cwbBcXY")
+API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+
+if not API_KEY or API_KEY == "dummy_key":
+    print("Warning: GEMINI_API_KEY not found. Chat functionality will be limited.")
+    API_KEY = "AIzaSyBx4_h7kQdD_zGzIeQ9MctV45S-cwbBcXY"
+
+
+
 if DATABASE_URL and DATABASE_URL.startswith("libsql://"):
-    DATABASE_URL = DATABASE_URL.replace("libsql://", "https://")
+    DATABASE_URL = DATABASE_URL.replace("libsql://", "https://").rstrip('/')
 
 def execute_sql(sql):
     if not DATABASE_URL or not DATABASE_TOKEN:
@@ -20,10 +31,18 @@ def execute_sql(sql):
     try:
         headers = {"Authorization": f"Bearer {DATABASE_TOKEN}", "Content-Type": "application/json"}
         data = {"requests": [{"type": "execute", "stmt": {"sql": sql}}]}
-        response = requests.post(f"{DATABASE_URL}/v2/pipeline", headers=headers, json=data, timeout=10)
-        return response.json() if response.status_code == 200 else {"error": "Database error"}
-    except:
-        return {"error": "Connection failed"}
+        url = f"{DATABASE_URL}/v2/pipeline"
+        response = requests.post(url, headers=headers, json=data, timeout=30)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            return {"error": f"HTTP {response.status_code}: {response.text}"}
+    except requests.exceptions.ConnectionError:
+        return {"error": "Cannot connect to Turso database. Check URL and network."}
+    except requests.exceptions.Timeout:
+        return {"error": "Database request timed out"}
+    except Exception as e:
+        return {"error": f"Connection failed: {str(e)}"}
 
 def extract_value(item):
     return item.get('value') if isinstance(item, dict) else item
@@ -50,6 +69,7 @@ class DeviceCreate(BaseModel):
 
 class HealthMetricCreate(BaseModel):
     device_id: str
+    user_id: int
     timestamp: str
     heart_rate: int = None
     spo2: int = None
@@ -60,17 +80,77 @@ class HealthMetricCreate(BaseModel):
 
 @app.get("/")
 def root():
+    # Test database connection
+    db_status = "connected" if DATABASE_URL and DATABASE_TOKEN else "not configured"
+    if DATABASE_URL and DATABASE_TOKEN:
+        test_result = execute_sql("SELECT 1")
+        db_status = "working" if "error" not in test_result else f"error: {test_result['error']}"
+    
     return {
         "message": "Bio Band Medical API v2.0 is running",
-        "status": "success"
+        "status": "success",
+        "database": db_status,
+        "features": [
+            "AI Health Assistant",
+            "Health Data Tracking",
+            "User Management",
+            "Device Management"
+        ],
+        "endpoints": {
+            "/chat": "POST - AI Health Assistant",
+            "/users/": "POST/GET - User Management",
+            "/devices/": "POST/GET - Device Management",
+            "/health-metrics/": "POST/GET - Health Metrics",
+            "/docs": "GET - API Documentation"
+        }
     }
 
 @app.post("/chat")
-def chat(request: MessageRequest):
-    return {
-        "response": "Hello! I'm Bio Band AI Assistant.",
-        "session_id": request.session_id
-    }
+async def health_chat(request: MessageRequest):
+    """AI Health Assistant - Get medical advice and health information"""
+    health_prompt = f"""You are Bio Band AI Assistant, a mini doctor for Bio Band users. You help with health questions only. Always use very simple English words that anyone can understand. Use short sentences. Avoid big medical words.
+    
+    IMPORTANT: If the question is NOT about health (like math, games, movies, etc.), say EXACTLY: "I cannot help with that, I only assist with health-related queries."
+    
+    For health questions:
+    - Give simple, easy advice
+    - Use everyday words
+    - Keep answers short and clear
+    - Tell them to see a doctor for serious problems
+    
+    Question: {request.message}
+    
+    Remember: Only health questions. Use simple words. Keep it short."""
+    
+    try:
+        response = requests.post(
+            API_URL,
+            headers={
+                "Content-Type": "application/json",
+                "X-goog-api-key": API_KEY,
+            },
+            json={
+                "contents": [{
+                    "parts": [{"text": health_prompt}]
+                }],
+                "generationConfig": {"maxOutputTokens": 1000}
+            },
+            timeout=30
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            ai_response = data["candidates"][0]["content"]["parts"][0]["text"]
+            return {
+                "response": ai_response.strip(),
+                "session_id": request.session_id,
+                "timestamp": datetime.now()
+            }
+        else:
+            return {"error": f"API Error {response.status_code}: {response.text}"}
+            
+    except Exception as e:
+        return {"error": str(e)}
 
 @app.get("/users/")
 def get_users():
@@ -109,6 +189,34 @@ def create_user(user: UserCreate):
         return {"success": True, "message": "User created successfully"}
     except:
         return {"success": False, "message": "Failed to create user"}
+
+@app.get("/users/{user_id}")
+def get_user_by_id(user_id: int):
+    try:
+        result = execute_sql(f"SELECT id, full_name, email, created_at FROM users WHERE id = {user_id}")
+        
+        if "error" in result:
+            return {"success": False, "error": result["error"]}
+        
+        if result.get("results") and len(result["results"]) > 0:
+            response_result = result["results"][0].get("response", {})
+            if "result" in response_result and "rows" in response_result["result"]:
+                rows = response_result["result"]["rows"]
+                if rows:
+                    row = rows[0]
+                    return {
+                        "success": True,
+                        "user": {
+                            "id": extract_value(row[0]),
+                            "full_name": extract_value(row[1]),
+                            "email": extract_value(row[2]),
+                            "created_at": extract_value(row[3])
+                        }
+                    }
+        
+        return {"success": False, "error": "User not found"}
+    except:
+        return {"success": False, "error": "Failed to get user"}
 
 @app.get("/devices/")
 def get_devices():
@@ -190,7 +298,7 @@ def create_health_metric(data: HealthMetricCreate):
         steps_val = data.steps if data.steps is not None else 'NULL'
         calories_val = data.calories if data.calories is not None else 'NULL'
         
-        sql = f"INSERT INTO health_metrics (device_id, user_id, heart_rate, spo2, temperature, steps, calories, activity, timestamp) VALUES ('{data.device_id}', 1, {heart_rate_val}, {spo2_val}, {temp_val}, {steps_val}, {calories_val}, '{data.activity}', '{data.timestamp}')"
+        sql = f"INSERT INTO health_metrics (device_id, user_id, heart_rate, spo2, temperature, steps, calories, activity, timestamp) VALUES ('{data.device_id}', {data.user_id}, {heart_rate_val}, {spo2_val}, {temp_val}, {steps_val}, {calories_val}, '{data.activity}', '{data.timestamp}')"
         
         result = execute_sql(sql)
         
@@ -200,3 +308,9 @@ def create_health_metric(data: HealthMetricCreate):
         return {"success": True, "message": "Health metric created successfully"}
     except:
         return {"success": False, "message": "Failed to create health metric"}
+
+
+
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy", "timestamp": datetime.now(), "database": "Turso"}
