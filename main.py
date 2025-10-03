@@ -326,6 +326,9 @@ def get_health_metrics():
 @app.post("/health-metrics/")
 def create_health_metric(data: HealthMetricCreate):
     try:
+        # Disable foreign keys first
+        execute_sql("PRAGMA foreign_keys = OFF")
+        
         heart_rate_val = data.heart_rate if data.heart_rate is not None else 'NULL'
         spo2_val = data.spo2 if data.spo2 is not None else 'NULL'
         temp_val = data.temperature if data.temperature is not None else 'NULL'
