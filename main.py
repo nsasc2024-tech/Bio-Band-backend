@@ -223,8 +223,19 @@ def register_device(device: DeviceCreate):
 @app.post("/health-metrics/")
 def add_health_metric(data: HealthMetricCreate):
     try:
+        # Get user_id from device_id by querying devices table
+        device_result = execute_turso_sql(f"SELECT user_id FROM devices WHERE device_id = '{data.device_id}' LIMIT 1")
+        
+        user_id = 1  # Default fallback
+        if device_result.get("results") and len(device_result["results"]) > 0:
+            response_result = device_result["results"][0].get("response", {})
+            if "result" in response_result and "rows" in response_result["result"]:
+                rows = response_result["result"]["rows"]
+                if len(rows) > 0:
+                    user_id = extract_value(rows[0][0])
+        
         # Use direct SQL without parameters to avoid Turso formatting issues
-        sql = f"INSERT INTO health_metrics (device_id, user_id, heart_rate, spo2, temperature, steps, calories, activity, timestamp) VALUES ('{data.device_id}', 1, {data.heart_rate or 'NULL'}, {data.spo2 or 'NULL'}, {data.temperature or 'NULL'}, {data.steps or 'NULL'}, {data.calories or 'NULL'}, '{data.activity}', '{data.timestamp}')"
+        sql = f"INSERT INTO health_metrics (device_id, user_id, heart_rate, spo2, temperature, steps, calories, activity, timestamp) VALUES ('{data.device_id}', {user_id}, {data.heart_rate or 'NULL'}, {data.spo2 or 'NULL'}, {data.temperature or 'NULL'}, {data.steps or 'NULL'}, {data.calories or 'NULL'}, '{data.activity}', '{data.timestamp}')"
         
         execute_turso_sql(sql)
         
