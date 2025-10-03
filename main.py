@@ -1,8 +1,32 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+import requests
+import os
 
 app = FastAPI()
+
+# Turso Database
+DATABASE_URL = os.getenv("TURSO_DB_URL", "")
+DATABASE_TOKEN = os.getenv("TURSO_DB_TOKEN", "")
+
+if DATABASE_URL and DATABASE_URL.startswith("libsql://"):
+    DATABASE_URL = DATABASE_URL.replace("libsql://", "https://")
+
+def execute_sql(sql):
+    if not DATABASE_URL or not DATABASE_TOKEN:
+        return {"error": "Database not configured"}
+    
+    try:
+        headers = {"Authorization": f"Bearer {DATABASE_TOKEN}", "Content-Type": "application/json"}
+        data = {"requests": [{"type": "execute", "stmt": {"sql": sql}}]}
+        response = requests.post(f"{DATABASE_URL}/v2/pipeline", headers=headers, json=data, timeout=10)
+        return response.json() if response.status_code == 200 else {"error": "Database error"}
+    except:
+        return {"error": "Connection failed"}
+
+def extract_value(item):
+    return item.get('value') if isinstance(item, dict) else item
 
 app.add_middleware(
     CORSMiddleware,
@@ -35,18 +59,41 @@ def chat(request: MessageRequest):
 
 @app.get("/users/")
 def get_users():
-    return {
-        "success": True,
-        "users": [],
-        "count": 0
-    }
+    try:
+        result = execute_sql("SELECT id, full_name, email, created_at FROM users ORDER BY id")
+        
+        if "error" in result:
+            return {"success": False, "error": result["error"], "users": [], "count": 0}
+        
+        users_data = []
+        if result.get("results") and len(result["results"]) > 0:
+            response_result = result["results"][0].get("response", {})
+            if "result" in response_result and "rows" in response_result["result"]:
+                rows = response_result["result"]["rows"]
+                for row in rows:
+                    users_data.append({
+                        "id": extract_value(row[0]),
+                        "full_name": extract_value(row[1]),
+                        "email": extract_value(row[2]),
+                        "created_at": extract_value(row[3])
+                    })
+        
+        return {"success": True, "users": users_data, "count": len(users_data)}
+    except:
+        return {"success": True, "users": [], "count": 0}
 
 @app.post("/users/")
 def create_user(user: UserCreate):
-    return {
-        "success": True,
-        "message": "User created successfully"
-    }
+    try:
+        sql = f"INSERT INTO users (full_name, email) VALUES ('{user.full_name.replace("'", "''")}', '{user.email}')"
+        result = execute_sql(sql)
+        
+        if "error" in result:
+            return {"success": False, "message": result["error"]}
+        
+        return {"success": True, "message": "User created successfully"}
+    except:
+        return {"success": False, "message": "Failed to create user"}
 
 @app.get("/devices/")
 def get_devices():
