@@ -1,3 +1,4 @@
+# Python
 __pycache__/
 *.pyc
 *.pyo
@@ -6,6 +7,43 @@ __pycache__/
 env/
 venv/
 .venv/
+*.egg-info/
+dist/
+build/
+
+# Environment variables
 .env
-app.db
+.env.local
+.env.production
+
+# Database
 *.db
+*.sqlite
+*.sqlite3
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Vercel
+.vercel/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Temporary files
+*.tmp
+*.temp
+temp/
