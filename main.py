@@ -12,7 +12,9 @@ load_dotenv()
 
 app = FastAPI(title="Bio Band Health Monitoring API", version="3.0.0")
 
-DATABASE_URL = os.getenv("TURSO_DB_URL", "https://bioband-praveencoder2007.aws-ap-south-1.turso.io")
+DATABASE_URL = os.getenv("TURSO_DB_URL")
+if DATABASE_URL and DATABASE_URL.startswith("libsql://"):
+    DATABASE_URL = DATABASE_URL.replace("libsql://", "https://")
 DATABASE_TOKEN = os.getenv("TURSO_DB_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
@@ -80,7 +82,7 @@ def root():
         "message": "Bio Band Health Monitoring API",
         "status": "success",
         "version": "4.0.0 - AI Enabled",
-        "database_url": "libsql://bioband-praveencoder2007.aws-ap-south-1.turso.io",
+        "database_url": DATABASE_URL,
         "endpoints": {
             "GET /users/": "Get all users from Turso",
             "GET /devices/": "Get all devices from Turso",
