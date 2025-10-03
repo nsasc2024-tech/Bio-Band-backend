@@ -21,8 +21,14 @@ if not API_KEY or API_KEY == "dummy_key":
 
 
 
-if DATABASE_URL and DATABASE_URL.startswith("libsql://"):
-    DATABASE_URL = DATABASE_URL.replace("libsql://", "https://").rstrip('/')
+# Convert URL format for Turso API
+if DATABASE_URL:
+    if DATABASE_URL.startswith("libsql://"):
+        DATABASE_URL = DATABASE_URL.replace("libsql://", "https://").rstrip('/')
+    elif DATABASE_URL.startswith("https://") and "turso.io" in DATABASE_URL:
+        DATABASE_URL = DATABASE_URL.rstrip('/')
+    else:
+        print(f"Warning: Unexpected database URL format: {DATABASE_URL}")
 
 def execute_sql(sql):
     if not DATABASE_URL or not DATABASE_TOKEN:
@@ -37,10 +43,12 @@ def execute_sql(sql):
             return response.json()
         else:
             return {"error": f"HTTP {response.status_code}: {response.text}"}
-    except requests.exceptions.ConnectionError:
-        return {"error": "Cannot connect to Turso database. Check URL and network."}
+    except requests.exceptions.ConnectionError as e:
+        return {"error": f"Cannot connect to Turso database: {str(e)}"}
     except requests.exceptions.Timeout:
         return {"error": "Database request timed out"}
+    except requests.exceptions.RequestException as e:
+        return {"error": f"Request failed: {str(e)}"}
     except Exception as e:
         return {"error": f"Connection failed: {str(e)}"}
 
@@ -100,6 +108,7 @@ def root():
             "/users/": "POST/GET - User Management",
             "/devices/": "POST/GET - Device Management",
             "/health-metrics/": "POST/GET - Health Metrics",
+            "/debug/db": "GET - Database Debug Info",
             "/docs": "GET - API Documentation"
         }
     }
@@ -370,3 +379,11 @@ def get_health_metrics_by_device(device_id: str):
 @app.get("/health")
 async def health_check():
     return {"status": "healthy", "timestamp": datetime.now(), "database": "Turso"}
+
+@app.get("/debug/db")
+def debug_database():
+    return {
+        "database_url": DATABASE_URL[:50] + "..." if DATABASE_URL else "Not set",
+        "database_token": "Set" if DATABASE_TOKEN else "Not set",
+        "connection_test": execute_sql("SELECT 1 as test")
+    }
