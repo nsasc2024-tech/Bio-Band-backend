@@ -253,6 +253,36 @@ def create_device(device: DeviceCreate):
     except:
         return {"success": False, "message": "Failed to create device"}
 
+@app.get("/devices/{id}")
+def get_device_by_id(id: int):
+    try:
+        result = execute_sql(f"SELECT id, device_id, user_id, model, status, registered_at FROM devices WHERE id = {id}")
+        
+        if "error" in result:
+            return {"success": False, "error": result["error"]}
+        
+        if result.get("results") and len(result["results"]) > 0:
+            response_result = result["results"][0].get("response", {})
+            if "result" in response_result and "rows" in response_result["result"]:
+                rows = response_result["result"]["rows"]
+                if rows:
+                    row = rows[0]
+                    return {
+                        "success": True,
+                        "device": {
+                            "id": extract_value(row[0]),
+                            "device_id": extract_value(row[1]),
+                            "user_id": extract_value(row[2]),
+                            "model": extract_value(row[3]),
+                            "status": extract_value(row[4]),
+                            "registered_at": extract_value(row[5])
+                        }
+                    }
+        
+        return {"success": False, "error": "Device not found"}
+    except:
+        return {"success": False, "error": "Failed to get device"}
+
 @app.get("/health-metrics/")
 def get_health_metrics():
     try:
