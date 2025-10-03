@@ -168,31 +168,41 @@ def get_all_devices():
 @app.post("/users/")
 def create_user(user: UserCreate):
     try:
-        execute_turso_sql(
-            "INSERT INTO users (full_name, email) VALUES (?, ?)",
-            [user.full_name, user.email]
-        )
+        # Use direct SQL without parameters
+        sql = f"INSERT INTO users (full_name, email) VALUES ('{user.full_name.replace("'", "''")}', '{user.email}')"
+        insert_result = execute_turso_sql(sql)
         
-        get_result = execute_turso_sql("SELECT id, full_name, email, created_at FROM users WHERE email = ? ORDER BY id DESC LIMIT 1", [user.email])
-        
-        if get_result.get("results") and len(get_result["results"]) > 0:
-            response_result = get_result["results"][0].get("response", {})
-            if "result" in response_result and "rows" in response_result["result"]:
-                rows = response_result["result"]["rows"]
-                if len(rows) > 0:
-                    row = rows[0]
-                    new_user = {
-                        "id": extract_value(row[0]),
-                        "full_name": extract_value(row[1]),
-                        "email": extract_value(row[2]),
-                        "created_at": extract_value(row[3])
-                    }
-                    
-                    return {
-                        "success": True,
-                        "message": "User created successfully in Turso",
-                        "user": new_user
-                    }
+        # Check if insert was successful
+        if insert_result.get("results") and len(insert_result["results"]) > 0:
+            result_info = insert_result["results"][0]
+            if result_info.get("type") == "ok":
+                # Get the newly created user
+                get_result = execute_turso_sql(f"SELECT id, full_name, email, created_at FROM users WHERE email = '{user.email}' ORDER BY id DESC LIMIT 1")
+                
+                if get_result.get("results") and len(get_result["results"]) > 0:
+                    response_result = get_result["results"][0].get("response", {})
+                    if "result" in response_result and "rows" in response_result["result"]:
+                        rows = response_result["result"]["rows"]
+                        if len(rows) > 0:
+                            row = rows[0]
+                            new_user = {
+                                "id": extract_value(row[0]),
+                                "full_name": extract_value(row[1]),
+                                "email": extract_value(row[2]),
+                                "created_at": extract_value(row[3])
+                            }
+                            
+                            return {
+                                "success": True,
+                                "message": "User created successfully in Turso",
+                                "user": new_user
+                            }
+            else:
+                error_msg = result_info.get("error", {}).get("message", "Unknown error")
+                if "UNIQUE constraint failed" in error_msg:
+                    return {"success": False, "message": "Email already exists"}
+                else:
+                    return {"success": False, "message": f"Database error: {error_msg}"}
         
         return {"success": False, "message": "Failed to create user"}
         
