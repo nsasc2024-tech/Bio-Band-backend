@@ -22,8 +22,8 @@ def main():
     
     # Apply database schemas
     print("Applying database schemas...")
-    run_command("turso db shell bioband-praveencoder2007 < database/schemas/minimal_db.sql")
-    run_command("turso db shell bioband-praveencoder2007 < database/schemas/chat_messages.sql")
+    run_command("turso db shell bioband-nsasc2024-tech < database/schemas/minimal_db.sql")
+    run_command("turso db shell bioband-nsasc2024-tech < database/schemas/chat_messages.sql")
     
     print("Database sync completed successfully!")
 

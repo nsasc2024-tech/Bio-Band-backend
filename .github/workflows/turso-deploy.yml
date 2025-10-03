@@ -23,5 +23,5 @@ jobs:
     
     - name: Run Database Migrations
       run: |
-        turso db shell bioband-praveencoder2007 < database/schemas/minimal_db.sql
-        turso db shell bioband-praveencoder2007 < database/schemas/chat_messages.sql
+        turso db shell bioband-nsasc2024-tech < database/schemas/minimal_db.sql
+        turso db shell bioband-nsasc2024-tech < database/schemas/chat_messages.sql
