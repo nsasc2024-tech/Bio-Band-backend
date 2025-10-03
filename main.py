@@ -373,16 +373,12 @@ def health_chat(request: ChatMessage):
     if not GEMINI_API_KEY or GEMINI_API_KEY == "dummy_key":
         return {"error": "AI service not available"}
     
-    # Create user-specific session
-    user_session_key = request.session_id
-    if user_session_key not in user_sessions:
-        user_sessions[user_session_key] = []
-    
-    user_sessions[user_session_key].append({
-        "role": "user", 
-        "message": request.message, 
-        "timestamp": datetime.now().isoformat()
-    })
+    # Store user message in Turso database
+    try:
+        user_msg_sql = f"INSERT INTO chat_messages (session_id, role, message, timestamp) VALUES ('{request.session_id}', 'user', '{request.message.replace("'", "''")}', '{datetime.now().isoformat()}')"
+        execute_turso_sql(user_msg_sql)
+    except Exception as e:
+        print(f"Error storing user message: {e}")
     
     # Health-focused AI prompt
     health_prompt = f"""You are Bio Band AI Assistant, a health advisor for Bio Band users. You help with health questions only. Use simple English words that anyone can understand.
@@ -421,11 +417,12 @@ def health_chat(request: ChatMessage):
             data = response.json()
             ai_response = data["candidates"][0]["content"]["parts"][0]["text"]
             
-            user_sessions[user_session_key].append({
-                "role": "assistant", 
-                "message": ai_response, 
-                "timestamp": datetime.now().isoformat()
-            })
+            # Store AI response in Turso database
+            try:
+                ai_msg_sql = f"INSERT INTO chat_messages (session_id, role, message, timestamp) VALUES ('{request.session_id}', 'assistant', '{ai_response.replace("'", "''")}', '{datetime.now().isoformat()}')"
+                execute_turso_sql(ai_msg_sql)
+            except Exception as e:
+                print(f"Error storing AI message: {e}")
             
             return {
                 "success": True,
@@ -441,20 +438,37 @@ def health_chat(request: ChatMessage):
 
 @app.get("/chat/{session_id}")
 def get_chat_history(session_id: str):
-    """Get chat history for a session"""
-    if session_id in user_sessions:
+    """Get chat history for a session from Turso database"""
+    try:
+        result = execute_turso_sql(f"SELECT role, message, timestamp FROM chat_messages WHERE session_id = '{session_id}' ORDER BY timestamp ASC")
+        
+        chat_history = []
+        if result.get("results") and len(result["results"]) > 0:
+            response_result = result["results"][0].get("response", {})
+            if "result" in response_result and "rows" in response_result["result"]:
+                rows = response_result["result"]["rows"]
+                for row in rows:
+                    chat_history.append({
+                        "role": extract_value(row[0]),
+                        "message": extract_value(row[1]),
+                        "timestamp": extract_value(row[2])
+                    })
+        
         return {
             "success": True,
             "session_id": session_id,
-            "history": user_sessions[session_id],
-            "message_count": len(user_sessions[session_id])
+            "history": chat_history,
+            "message_count": len(chat_history)
         }
-    return {
-        "success": True,
-        "session_id": session_id, 
-        "history": [], 
-        "message_count": 0
-    }
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "session_id": session_id,
+            "history": [],
+            "message_count": 0
+        }
 
 @app.get("/health")
 def health_check():
