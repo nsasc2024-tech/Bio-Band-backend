@@ -1,6 +1,6 @@
 # Bio Band Health Monitoring API Documentation
 
-**Base URL:** `https://test-cu0mkzf55-praveens-projects-79540d8d.vercel.app`
+**Base URL:** `https://bio-band-backend.vercel.app`
 
 **Database:** Turso (LibSQL) - Real-time edge database
 
@@ -19,6 +19,8 @@
 | POST | `/health-metrics/` | Add health data | ✅ Live |
 | GET | `/health-metrics/device/{device_id}` | Get device-specific health data | ✅ Live |
 | GET | `/health` | Health check | ✅ Live |
+| POST | `/chat/` | AI Health Assistant | ✅ Live |
+| GET | `/chat/{session_id}` | Get chat history | ✅ Live |
 
 ---
 
@@ -34,7 +36,7 @@ GET /
 {
   "message": "Bio Band Health Monitoring API",
   "status": "success",
-  "version": "3.0.0",
+  "version": "4.0.0 - AI Enabled",
   "database_url": "libsql://bioband-praveencoder2007.aws-ap-south-1.turso.io",
   "endpoints": {
     "GET /users/": "Get all users from Turso",
@@ -42,7 +44,9 @@ GET /
     "GET /health-metrics/": "Get all health data from Turso",
     "POST /users/": "Create user",
     "POST /devices/": "Register device",
-    "POST /health-metrics/": "Add health data"
+    "POST /health-metrics/": "Add health data",
+    "POST /chat/": "AI Health Assistant",
+    "GET /chat/{session_id}": "Get chat history"
   }
 }
 ```
@@ -290,26 +294,26 @@ GET /health
 
 ### Create User
 ```bash
-curl -X POST https://test-cu0mkzf55-praveens-projects-79540d8d.vercel.app/users/ \
+curl -X POST https://bio-band-backend.vercel.app/users/ \
   -H "Content-Type: application/json" \
   -d '{"full_name": "Test User", "email": "test@example.com"}'
 ```
 
 ### Get Users
 ```bash
-curl https://test-cu0mkzf55-praveens-projects-79540d8d.vercel.app/users/
+curl https://bio-band-backend.vercel.app/users/
 ```
 
 ### Register Device
 ```bash
-curl -X POST https://test-cu0mkzf55-praveens-projects-79540d8d.vercel.app/devices/ \
+curl -X POST https://bio-band-backend.vercel.app/devices/ \
   -H "Content-Type: application/json" \
   -d '{"device_id": "BAND003", "user_id": 1, "model": "BioBand Pro"}'
 ```
 
 ### Add Health Data
 ```bash
-curl -X POST https://test-cu0mkzf55-praveens-projects-79540d8d.vercel.app/health-metrics/ \
+curl -X POST https://bio-band-backend.vercel.app/health-metrics/ \
   -H "Content-Type: application/json" \
   -d '{
     "device_id": "BAND001",
