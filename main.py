@@ -23,7 +23,7 @@ def execute_turso_sql(sql, params=None):
     
     stmt = {"sql": sql}
     if params:
-        stmt["args"] = [{"type": "text", "value": str(p)} if isinstance(p, str) else {"type": "integer", "value": str(p)} if isinstance(p, int) else {"type": "float", "value": str(p)} for p in params]
+        stmt["args"] = [{"type": "text", "value": str(p)} if isinstance(p, str) else {"type": "integer", "value": p} if isinstance(p, int) else {"type": "float", "value": p} for p in params]
     
     data = {"requests": [{"type": "execute", "stmt": stmt}]}
     
