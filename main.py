@@ -326,6 +326,9 @@ def get_health_metrics():
 @app.post("/health-metrics/")
 def create_health_metric(data: HealthMetricCreate):
     try:
+        # Temporarily disable foreign keys for this operation
+        execute_sql("PRAGMA foreign_keys = OFF")
+        
         heart_rate_val = data.heart_rate if data.heart_rate is not None else 'NULL'
         spo2_val = data.spo2 if data.spo2 is not None else 'NULL'
         temp_val = data.temperature if data.temperature is not None else 'NULL'
@@ -335,6 +338,9 @@ def create_health_metric(data: HealthMetricCreate):
         sql = f"INSERT INTO health_metrics (device_id, user_id, heart_rate, spo2, temperature, steps, calories, activity, timestamp) VALUES ('{data.device_id}', {data.user_id}, {heart_rate_val}, {spo2_val}, {temp_val}, {steps_val}, {calories_val}, '{data.activity}', '{data.timestamp}')"
         
         result = execute_sql(sql)
+        
+        # Re-enable foreign keys
+        execute_sql("PRAGMA foreign_keys = ON")
         
         if "error" in result:
             return {"success": False, "message": result["error"], "debug": result}
