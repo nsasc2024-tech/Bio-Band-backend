@@ -19,42 +19,35 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Turso Database Configuration
-DATABASE_URL = os.getenv("TURSO_DB_URL")
-DATABASE_TOKEN = os.getenv("TURSO_DB_TOKEN")
+# Environment Variables
+DATABASE_URL = os.getenv("TURSO_DB_URL", "")
+DATABASE_TOKEN = os.getenv("TURSO_DB_TOKEN", "")
+API_KEY = os.getenv("GEMINI_API_KEY", "dummy_key")
+API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+
+# Convert libsql to https
 if DATABASE_URL and DATABASE_URL.startswith("libsql://"):
     DATABASE_URL = DATABASE_URL.replace("libsql://", "https://")
 
-# Gemini AI Configuration
-API_KEY = os.getenv("GEMINI_API_KEY")
-API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
-
-if not API_KEY:
-    print("Warning: GEMINI_API_KEY not found.")
-    API_KEY = "dummy_key"
-
 user_sessions = {}
 
-# Database Functions
-def execute_turso_sql(sql):
-    headers = {
-        "Authorization": f"Bearer {DATABASE_TOKEN}",
-        "Content-Type": "application/json"
-    }
-    data = {"requests": [{"type": "execute", "stmt": {"sql": sql}}]}
+# Simple database function
+def execute_sql(sql):
+    if not DATABASE_URL or not DATABASE_TOKEN:
+        return {"error": "Database not configured"}
     
     try:
+        headers = {"Authorization": f"Bearer {DATABASE_TOKEN}", "Content-Type": "application/json"}
+        data = {"requests": [{"type": "execute", "stmt": {"sql": sql}}]}
         response = requests.post(f"{DATABASE_URL}/v2/pipeline", headers=headers, json=data, timeout=10)
-        if response.status_code != 200:
-            raise Exception(f"HTTP {response.status_code}: {response.text}")
-        return response.json()
-    except requests.exceptions.RequestException as e:
-        raise Exception(f"Database connection failed: {str(e)}")
+        return response.json() if response.status_code == 200 else {"error": f"HTTP {response.status_code}"}
+    except Exception as e:
+        return {"error": str(e)}
 
 def extract_value(item):
     return item.get('value') if isinstance(item, dict) else item
 
-# Pydantic Models
+# Models
 class MessageRequest(BaseModel):
     message: str
     session_id: str = "default"
@@ -82,20 +75,20 @@ class HealthMetricCreate(BaseModel):
 async def root():
     return {
         "message": "Bio Band Medical API v2.0 is running",
-        "features": ["AI Health Assistant with Gemini", "User Management", "Device Management", "Health Data Tracking"],
+        "features": ["AI Health Assistant", "User Management", "Device Management", "Health Data"],
         "endpoints": {
-            "/chat": "POST - Chat with Gemini AI",
+            "/chat": "POST - AI Health Assistant",
             "/chat/{session_id}": "GET - Chat History",
             "/users/": "GET/POST - User Management",
-            "/devices/": "GET/POST - Device Management",
+            "/devices/": "GET/POST - Device Management", 
             "/health-metrics/": "GET/POST - Health Data"
-        }
+        },
+        "database_status": "Connected" if DATABASE_URL and DATABASE_TOKEN else "Not configured"
     }
 
-# AI Chat APIs
+# Chat APIs
 @app.post("/chat")
 async def health_chat(request: MessageRequest):
-    """AI Health Assistant - Chat with Gemini AI"""
     user_session_key = f"{request.session_id}"
     
     if user_session_key not in user_sessions:
@@ -107,58 +100,50 @@ async def health_chat(request: MessageRequest):
         "timestamp": datetime.now()
     })
     
-    health_prompt = f"""You are Bio Band AI Assistant, a health advisor for Bio Band users. You help with health questions only. Use simple English words.
+    health_prompt = f"""You are Bio Band AI Assistant. You help with health questions only. Use simple English.
 
-    IMPORTANT: If the question is NOT about health (like math, games, movies, etc.), say EXACTLY: "I can only help with health-related questions."
+    IMPORTANT: If NOT about health, say: "I can only help with health-related questions."
 
-    For health questions:
-    - Give simple, helpful advice
-    - Use everyday words
-    - Keep answers short and clear
-    - Tell them to see a doctor for serious problems
+    For health questions: Give simple, helpful advice. Use everyday words. Keep short. Tell them to see doctor for serious problems.
 
-    Question: {request.message}
-
-    Remember: Only health questions. Use simple words. Keep it short."""
+    Question: {request.message}"""
     
     try:
-        response = requests.post(
-            API_URL,
-            headers={
-                "Content-Type": "application/json",
-                "X-goog-api-key": API_KEY,
-            },
-            json={
-                "contents": [{
-                    "parts": [{"text": health_prompt}]
-                }],
-                "generationConfig": {"maxOutputTokens": 500}
-            },
-            timeout=30
-        )
-        
-        if response.status_code == 200:
-            data = response.json()
-            ai_response = data["candidates"][0]["content"]["parts"][0]["text"]
-            user_sessions[user_session_key].append({
-                "role": "assistant", 
-                "message": ai_response, 
-                "timestamp": datetime.now()
-            })
-            return {
-                "response": ai_response.strip(),
-                "session_id": request.session_id,
-                "timestamp": datetime.now()
-            }
+        if API_KEY == "dummy_key":
+            ai_response = "AI service not available. Please configure GEMINI_API_KEY."
         else:
-            return {"error": f"API Error {response.status_code}: {response.text}"}
+            response = requests.post(
+                API_URL,
+                headers={"Content-Type": "application/json", "X-goog-api-key": API_KEY},
+                json={
+                    "contents": [{"parts": [{"text": health_prompt}]}],
+                    "generationConfig": {"maxOutputTokens": 500}
+                },
+                timeout=30
+            )
             
+            if response.status_code == 200:
+                data = response.json()
+                ai_response = data["candidates"][0]["content"]["parts"][0]["text"]
+            else:
+                ai_response = f"AI Error: {response.status_code}"
+        
+        user_sessions[user_session_key].append({
+            "role": "assistant", 
+            "message": ai_response, 
+            "timestamp": datetime.now()
+        })
+        
+        return {
+            "response": ai_response.strip(),
+            "session_id": request.session_id,
+            "timestamp": datetime.now()
+        }
     except Exception as e:
         return {"error": str(e)}
 
 @app.get("/chat/{session_id}")
 async def get_chat_history(session_id: str):
-    """Get chat history for a session"""
     user_session_key = f"{session_id}"
     
     if user_session_key in user_sessions:
@@ -169,11 +154,14 @@ async def get_chat_history(session_id: str):
         }
     return {"session_id": session_id, "history": [], "message_count": 0}
 
-# User Management APIs
+# User APIs
 @app.get("/users/")
-def get_all_users():
+def get_users():
     try:
-        result = execute_turso_sql("SELECT id, full_name, email, created_at FROM users ORDER BY id")
+        result = execute_sql("SELECT id, full_name, email, created_at FROM users ORDER BY id")
+        
+        if "error" in result:
+            return {"success": False, "error": result["error"], "users": [], "count": 0}
         
         users_data = []
         if result.get("results") and len(result["results"]) > 0:
@@ -188,12 +176,7 @@ def get_all_users():
                         "created_at": extract_value(row[3])
                     })
         
-        return {
-            "success": True,
-            "users": users_data,
-            "count": len(users_data),
-            "source": "Turso Database"
-        }
+        return {"success": True, "users": users_data, "count": len(users_data)}
     except Exception as e:
         return {"success": False, "error": str(e), "users": [], "count": 0}
 
@@ -201,44 +184,23 @@ def get_all_users():
 def create_user(user: UserCreate):
     try:
         sql = f"INSERT INTO users (full_name, email) VALUES ('{user.full_name.replace(\"'\", \"''\")}', '{user.email}')"
-        insert_result = execute_turso_sql(sql)
+        result = execute_sql(sql)
         
-        if insert_result.get("results") and len(insert_result["results"]) > 0:
-            result_info = insert_result["results"][0]
-            if result_info.get("type") == "ok":
-                get_result = execute_turso_sql(f"SELECT id, full_name, email, created_at FROM users WHERE email = '{user.email}' ORDER BY id DESC LIMIT 1")
-                
-                if get_result.get("results") and len(get_result["results"]) > 0:
-                    response_result = get_result["results"][0].get("response", {})
-                    if "result" in response_result and "rows" in response_result["result"]:
-                        rows = response_result["result"]["rows"]
-                        if len(rows) > 0:
-                            row = rows[0]
-                            return {
-                                "success": True,
-                                "message": "User created successfully",
-                                "user": {
-                                    "id": extract_value(row[0]),
-                                    "full_name": extract_value(row[1]),
-                                    "email": extract_value(row[2]),
-                                    "created_at": extract_value(row[3])
-                                }
-                            }
-            else:
-                error_msg = result_info.get("error", {}).get("message", "Unknown error")
-                if "UNIQUE constraint failed" in error_msg:
-                    return {"success": False, "message": "Email already exists"}
-                return {"success": False, "message": f"Database error: {error_msg}"}
+        if "error" in result:
+            return {"success": False, "message": result["error"]}
         
-        return {"success": False, "message": "Failed to create user"}
+        return {"success": True, "message": "User created successfully", "user": {"full_name": user.full_name, "email": user.email}}
     except Exception as e:
-        return {"success": False, "message": f"Error: {str(e)}"}
+        return {"success": False, "message": str(e)}
 
-# Device Management APIs
+# Device APIs
 @app.get("/devices/")
-def get_all_devices():
+def get_devices():
     try:
-        result = execute_turso_sql("SELECT id, device_id, user_id, model, status, registered_at FROM devices ORDER BY id")
+        result = execute_sql("SELECT id, device_id, user_id, model, status, registered_at FROM devices ORDER BY id")
+        
+        if "error" in result:
+            return {"success": False, "error": result["error"], "devices": [], "count": 0}
         
         devices_data = []
         if result.get("results") and len(result["results"]) > 0:
@@ -255,54 +217,31 @@ def get_all_devices():
                         "registered_at": extract_value(row[5])
                     })
         
-        return {
-            "success": True,
-            "devices": devices_data,
-            "count": len(devices_data),
-            "source": "Turso Database"
-        }
+        return {"success": True, "devices": devices_data, "count": len(devices_data)}
     except Exception as e:
         return {"success": False, "error": str(e), "devices": [], "count": 0}
 
 @app.post("/devices/")
-def register_device(device: DeviceCreate):
+def create_device(device: DeviceCreate):
     try:
         sql = f"INSERT INTO devices (device_id, user_id, model) VALUES ('{device.device_id}', {device.user_id}, '{device.model}')"
-        insert_result = execute_turso_sql(sql)
+        result = execute_sql(sql)
         
-        if insert_result.get("results") and len(insert_result["results"]) > 0:
-            result_info = insert_result["results"][0]
-            if result_info.get("type") == "ok":
-                get_result = execute_turso_sql(f"SELECT id, device_id, user_id, model, status, registered_at FROM devices WHERE device_id = '{device.device_id}' ORDER BY id DESC LIMIT 1")
-                
-                if get_result.get("results") and len(get_result["results"]) > 0:
-                    response_result = get_result["results"][0].get("response", {})
-                    if "result" in response_result and "rows" in response_result["result"]:
-                        rows = response_result["result"]["rows"]
-                        if len(rows) > 0:
-                            row = rows[0]
-                            return {
-                                "success": True,
-                                "message": "Device registered successfully",
-                                "device": {
-                                    "id": extract_value(row[0]),
-                                    "device_id": extract_value(row[1]),
-                                    "user_id": extract_value(row[2]),
-                                    "model": extract_value(row[3]),
-                                    "status": extract_value(row[4]),
-                                    "registered_at": extract_value(row[5])
-                                }
-                            }
+        if "error" in result:
+            return {"success": False, "message": result["error"]}
         
-        return {"success": False, "message": "Failed to register device"}
+        return {"success": True, "message": "Device created successfully", "device": {"device_id": device.device_id, "user_id": device.user_id, "model": device.model}}
     except Exception as e:
-        return {"success": False, "message": f"Error: {str(e)}"}
+        return {"success": False, "message": str(e)}
 
 # Health Metrics APIs
 @app.get("/health-metrics/")
-def get_all_health_metrics():
+def get_health_metrics():
     try:
-        result = execute_turso_sql("SELECT id, device_id, user_id, heart_rate, spo2, temperature, steps, calories, activity, timestamp FROM health_metrics ORDER BY timestamp DESC")
+        result = execute_sql("SELECT id, device_id, user_id, heart_rate, spo2, temperature, steps, calories, activity, timestamp FROM health_metrics ORDER BY timestamp DESC")
+        
+        if "error" in result:
+            return {"success": False, "error": result["error"], "health_metrics": [], "count": 0}
         
         health_data = []
         if result.get("results") and len(result["results"]) > 0:
@@ -323,65 +262,27 @@ def get_all_health_metrics():
                         "timestamp": extract_value(row[9])
                     })
         
-        return {
-            "success": True,
-            "health_metrics": health_data,
-            "count": len(health_data),
-            "source": "Turso Database"
-        }
+        return {"success": True, "health_metrics": health_data, "count": len(health_data)}
     except Exception as e:
         return {"success": False, "error": str(e), "health_metrics": [], "count": 0}
 
 @app.post("/health-metrics/")
-def add_health_metric(data: HealthMetricCreate):
+def create_health_metric(data: HealthMetricCreate):
     try:
-        # Auto-create device if it doesn't exist
-        device_check = execute_turso_sql(f"SELECT user_id FROM devices WHERE device_id = '{data.device_id}' LIMIT 1")
-        
-        user_id = 1
-        if device_check.get("results") and len(device_check["results"]) > 0:
-            response_result = device_check["results"][0].get("response", {})
-            if "result" in response_result and "rows" in response_result["result"]:
-                rows = response_result["result"]["rows"]
-                if len(rows) > 0:
-                    user_id = extract_value(rows[0][0])
-                else:
-                    create_device_sql = f"INSERT INTO devices (device_id, user_id, model) VALUES ('{data.device_id}', 1, 'BioBand Pro')"
-                    execute_turso_sql(create_device_sql)
-        
-        # Insert health metric
+        # Simple insert without device checking
         heart_rate_val = data.heart_rate if data.heart_rate is not None else 'NULL'
         spo2_val = data.spo2 if data.spo2 is not None else 'NULL'
         temp_val = data.temperature if data.temperature is not None else 'NULL'
         steps_val = data.steps if data.steps is not None else 'NULL'
         calories_val = data.calories if data.calories is not None else 'NULL'
         
-        sql = f"INSERT INTO health_metrics (device_id, user_id, heart_rate, spo2, temperature, steps, calories, activity, timestamp) VALUES ('{data.device_id}', {user_id}, {heart_rate_val}, {spo2_val}, {temp_val}, {steps_val}, {calories_val}, '{data.activity}', '{data.timestamp}')"
+        sql = f"INSERT INTO health_metrics (device_id, user_id, heart_rate, spo2, temperature, steps, calories, activity, timestamp) VALUES ('{data.device_id}', 1, {heart_rate_val}, {spo2_val}, {temp_val}, {steps_val}, {calories_val}, '{data.activity}', '{data.timestamp}')"
         
-        insert_result = execute_turso_sql(sql)
+        result = execute_sql(sql)
         
-        if insert_result.get("results") and len(insert_result["results"]) > 0:
-            result_info = insert_result["results"][0]
-            if result_info.get("type") == "ok":
-                return {
-                    "success": True,
-                    "message": "Health metric recorded successfully",
-                    "data": {
-                        "device_id": data.device_id,
-                        "user_id": str(user_id),
-                        "heart_rate": str(data.heart_rate) if data.heart_rate else None,
-                        "spo2": str(data.spo2) if data.spo2 else None,
-                        "temperature": data.temperature,
-                        "steps": str(data.steps) if data.steps else None,
-                        "calories": str(data.calories) if data.calories else None,
-                        "activity": data.activity,
-                        "timestamp": data.timestamp
-                    }
-                }
-            else:
-                error_msg = result_info.get("error", {}).get("message", "Unknown error")
-                return {"success": False, "message": f"Database error: {error_msg}"}
+        if "error" in result:
+            return {"success": False, "message": result["error"]}
         
-        return {"success": False, "message": "Failed to create health metric"}
+        return {"success": True, "message": "Health metric created successfully", "data": {"device_id": data.device_id, "timestamp": data.timestamp}}
     except Exception as e:
-        return {"success": False, "message": f"Error: {str(e)}"}
+        return {"success": False, "message": str(e)}
