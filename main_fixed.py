@@ -14,11 +14,6 @@ app = FastAPI(title="Bio Band Health Monitoring API", version="3.0.0")
 
 DATABASE_URL = os.getenv("TURSO_DB_URL", "https://bioband-praveencoder2007.aws-ap-south-1.turso.io")
 DATABASE_TOKEN = os.getenv("TURSO_DB_TOKEN")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
-
-# User chat sessions
-user_sessions = {}
 
 def execute_turso_sql(sql, params=None):
     headers = {
@@ -28,7 +23,7 @@ def execute_turso_sql(sql, params=None):
     
     stmt = {"sql": sql}
     if params:
-        stmt["args"] = [{"type": "text", "value": str(p)} if isinstance(p, str) else {"type": "integer", "value": str(p)} if isinstance(p, int) else {"type": "float", "value": str(p)} for p in params]
+        stmt["args"] = [{"type": "text", "value": str(p)} if isinstance(p, str) else {"type": "integer", "value": str(p)} if isinstance(p, int) else {"type": "real", "value": str(p)} for p in params]
     
     data = {"requests": [{"type": "execute", "stmt": stmt}]}
     
@@ -70,16 +65,12 @@ class DeviceCreate(BaseModel):
     user_id: int
     model: str = "BioBand Pro"
 
-class ChatMessage(BaseModel):
-    message: str
-    session_id: str = "default"
-
 @app.get("/")
 def root():
     return {
         "message": "Bio Band Health Monitoring API",
         "status": "success",
-        "version": "4.0.0 - AI Enabled",
+        "version": "3.0.0",
         "database_url": "libsql://bioband-praveencoder2007.aws-ap-south-1.turso.io",
         "endpoints": {
             "GET /users/": "Get all users from Turso",
@@ -87,9 +78,7 @@ def root():
             "GET /health-metrics/": "Get all health data from Turso",
             "POST /users/": "Create user",
             "POST /devices/": "Register device",
-            "POST /health-metrics/": "Add health data",
-            "POST /chat/": "AI Health Assistant",
-            "GET /chat/{session_id}": "Get chat history"
+            "POST /health-metrics/": "Add health data"
         }
     }
 
@@ -200,8 +189,10 @@ def create_user(user: UserCreate):
 @app.post("/devices/")
 def register_device(device: DeviceCreate):
     try:
-        sql = f"INSERT INTO devices (device_id, user_id, model) VALUES ('{device.device_id}', {device.user_id}, '{device.model}')"
-        execute_turso_sql(sql)
+        execute_turso_sql(
+            "INSERT INTO devices (device_id, user_id, model) VALUES (?, ?, ?)",
+            [device.device_id, device.user_id, device.model]
+        )
         
         get_result = execute_turso_sql("SELECT id, device_id, user_id, model, status, registered_at FROM devices WHERE device_id = ? ORDER BY id DESC LIMIT 1", [device.device_id])
         
@@ -234,21 +225,10 @@ def register_device(device: DeviceCreate):
 @app.post("/health-metrics/")
 def add_health_metric(data: HealthMetricCreate):
     try:
-        # Get user_id from device_id by querying devices table
-        device_result = execute_turso_sql(f"SELECT user_id FROM devices WHERE device_id = '{data.device_id}' LIMIT 1")
-        
-        user_id = 1  # Default fallback
-        if device_result.get("results") and len(device_result["results"]) > 0:
-            response_result = device_result["results"][0].get("response", {})
-            if "result" in response_result and "rows" in response_result["result"]:
-                rows = response_result["result"]["rows"]
-                if len(rows) > 0:
-                    user_id = extract_value(rows[0][0])
-        
-        # Use direct SQL without parameters to avoid Turso formatting issues
-        sql = f"INSERT INTO health_metrics (device_id, user_id, heart_rate, spo2, temperature, steps, calories, activity, timestamp) VALUES ('{data.device_id}', {user_id}, {data.heart_rate or 'NULL'}, {data.spo2 or 'NULL'}, {data.temperature or 'NULL'}, {data.steps or 'NULL'}, {data.calories or 'NULL'}, '{data.activity}', '{data.timestamp}')"
-        
-        execute_turso_sql(sql)
+        execute_turso_sql(
+            "INSERT INTO health_metrics (device_id, user_id, heart_rate, spo2, temperature, steps, calories, activity, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [data.device_id, 1, data.heart_rate, data.spo2, data.temperature, data.steps, data.calories, data.activity, data.timestamp]
+        )
         
         get_result = execute_turso_sql("SELECT id, device_id, user_id, heart_rate, spo2, temperature, steps, calories, activity, timestamp FROM health_metrics ORDER BY id DESC LIMIT 1")
         
@@ -366,95 +346,6 @@ def get_device_health_metrics(device_id: str):
             "count": 0,
             "source": "Turso Database Error"
         }
-
-@app.post("/chat/")
-def health_chat(request: ChatMessage):
-    """AI Health Assistant - Get medical advice and health information"""
-    if not GEMINI_API_KEY or GEMINI_API_KEY == "dummy_key":
-        return {"error": "AI service not available"}
-    
-    # Create user-specific session
-    user_session_key = request.session_id
-    if user_session_key not in user_sessions:
-        user_sessions[user_session_key] = []
-    
-    user_sessions[user_session_key].append({
-        "role": "user", 
-        "message": request.message, 
-        "timestamp": datetime.now().isoformat()
-    })
-    
-    # Health-focused AI prompt
-    health_prompt = f"""You are Bio Band AI Assistant, a health advisor for Bio Band users. You help with health questions only. Use simple English words that anyone can understand.
-    
-    IMPORTANT: If the question is NOT about health (like math, games, movies, etc.), say EXACTLY: "I can only help with health-related questions."
-    
-    For health questions:
-    - Give simple, helpful advice
-    - Use everyday words
-    - Keep answers short and clear
-    - Tell them to see a doctor for serious problems
-    
-    Previous chat: {user_sessions[user_session_key][-3:] if len(user_sessions[user_session_key]) > 1 else []}
-    
-    Question: {request.message}
-    
-    Remember: Only health questions. Use simple words. Keep it short."""
-    
-    try:
-        response = requests.post(
-            GEMINI_API_URL,
-            headers={
-                "Content-Type": "application/json",
-                "X-goog-api-key": GEMINI_API_KEY,
-            },
-            json={
-                "contents": [{
-                    "parts": [{"text": health_prompt}]
-                }],
-                "generationConfig": {"maxOutputTokens": 500}
-            },
-            timeout=30
-        )
-        
-        if response.status_code == 200:
-            data = response.json()
-            ai_response = data["candidates"][0]["content"]["parts"][0]["text"]
-            
-            user_sessions[user_session_key].append({
-                "role": "assistant", 
-                "message": ai_response, 
-                "timestamp": datetime.now().isoformat()
-            })
-            
-            return {
-                "success": True,
-                "response": ai_response.strip(),
-                "session_id": request.session_id,
-                "timestamp": datetime.now().isoformat()
-            }
-        else:
-            return {"success": False, "error": f"AI API Error: {response.status_code}"}
-            
-    except Exception as e:
-        return {"success": False, "error": f"AI Error: {str(e)}"}
-
-@app.get("/chat/{session_id}")
-def get_chat_history(session_id: str):
-    """Get chat history for a session"""
-    if session_id in user_sessions:
-        return {
-            "success": True,
-            "session_id": session_id,
-            "history": user_sessions[session_id],
-            "message_count": len(user_sessions[session_id])
-        }
-    return {
-        "success": True,
-        "session_id": session_id, 
-        "history": [], 
-        "message_count": 0
-    }
 
 @app.get("/health")
 def health_check():
