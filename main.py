@@ -246,48 +246,67 @@ def register_device(device: DeviceCreate):
 @app.post("/health-metrics/")
 def add_health_metric(data: HealthMetricCreate):
     try:
-        # Get user_id from device_id by querying devices table
-        device_result = execute_turso_sql(f"SELECT user_id FROM devices WHERE device_id = '{data.device_id}' LIMIT 1")
+        # First create a device if it doesn't exist
+        device_check = execute_turso_sql(f"SELECT user_id FROM devices WHERE device_id = '{data.device_id}' LIMIT 1")
         
         user_id = 1  # Default fallback
-        if device_result.get("results") and len(device_result["results"]) > 0:
-            response_result = device_result["results"][0].get("response", {})
+        if device_check.get("results") and len(device_check["results"]) > 0:
+            response_result = device_check["results"][0].get("response", {})
             if "result" in response_result and "rows" in response_result["result"]:
                 rows = response_result["result"]["rows"]
                 if len(rows) > 0:
                     user_id = extract_value(rows[0][0])
+                else:
+                    # Device doesn't exist, create it
+                    create_device_sql = f"INSERT INTO devices (device_id, user_id, model) VALUES ('{data.device_id}', 1, 'BioBand Pro')"
+                    execute_turso_sql(create_device_sql)
+                    user_id = 1
         
-        # Use direct SQL without parameters to avoid Turso formatting issues
-        sql = f"INSERT INTO health_metrics (device_id, user_id, heart_rate, spo2, temperature, steps, calories, activity, timestamp) VALUES ('{data.device_id}', {user_id}, {data.heart_rate or 'NULL'}, {data.spo2 or 'NULL'}, {data.temperature or 'NULL'}, {data.steps or 'NULL'}, {data.calories or 'NULL'}, '{data.activity}', '{data.timestamp}')"
+        # Insert health metric with proper NULL handling
+        heart_rate_val = data.heart_rate if data.heart_rate is not None else 'NULL'
+        spo2_val = data.spo2 if data.spo2 is not None else 'NULL'
+        temp_val = data.temperature if data.temperature is not None else 'NULL'
+        steps_val = data.steps if data.steps is not None else 'NULL'
+        calories_val = data.calories if data.calories is not None else 'NULL'
         
-        execute_turso_sql(sql)
+        sql = f"INSERT INTO health_metrics (device_id, user_id, heart_rate, spo2, temperature, steps, calories, activity, timestamp) VALUES ('{data.device_id}', {user_id}, {heart_rate_val}, {spo2_val}, {temp_val}, {steps_val}, {calories_val}, '{data.activity}', '{data.timestamp}')"
         
-        get_result = execute_turso_sql("SELECT id, device_id, user_id, heart_rate, spo2, temperature, steps, calories, activity, timestamp FROM health_metrics ORDER BY id DESC LIMIT 1")
+        insert_result = execute_turso_sql(sql)
         
-        if get_result.get("results") and len(get_result["results"]) > 0:
-            response_result = get_result["results"][0].get("response", {})
-            if "result" in response_result and "rows" in response_result["result"]:
-                rows = response_result["result"]["rows"]
-                if len(rows) > 0:
-                    row = rows[0]
-                    health_metric = {
-                        "id": extract_value(row[0]),
-                        "device_id": extract_value(row[1]),
-                        "user_id": extract_value(row[2]),
-                        "heart_rate": extract_value(row[3]),
-                        "spo2": extract_value(row[4]),
-                        "temperature": extract_value(row[5]),
-                        "steps": extract_value(row[6]),
-                        "calories": extract_value(row[7]),
-                        "activity": extract_value(row[8]),
-                        "timestamp": extract_value(row[9])
-                    }
-                    
-                    return {
-                        "success": True,
-                        "message": "Health metric recorded successfully in Turso",
-                        "data": health_metric
-                    }
+        # Check if insert was successful
+        if insert_result.get("results") and len(insert_result["results"]) > 0:
+            result_info = insert_result["results"][0]
+            if result_info.get("type") == "ok":
+                # Get the newly created health metric
+                get_result = execute_turso_sql("SELECT id, device_id, user_id, heart_rate, spo2, temperature, steps, calories, activity, timestamp FROM health_metrics ORDER BY id DESC LIMIT 1")
+                
+                if get_result.get("results") and len(get_result["results"]) > 0:
+                    response_result = get_result["results"][0].get("response", {})
+                    if "result" in response_result and "rows" in response_result["result"]:
+                        rows = response_result["result"]["rows"]
+                        if len(rows) > 0:
+                            row = rows[0]
+                            health_metric = {
+                                "id": extract_value(row[0]),
+                                "device_id": extract_value(row[1]),
+                                "user_id": extract_value(row[2]),
+                                "heart_rate": extract_value(row[3]),
+                                "spo2": extract_value(row[4]),
+                                "temperature": extract_value(row[5]),
+                                "steps": extract_value(row[6]),
+                                "calories": extract_value(row[7]),
+                                "activity": extract_value(row[8]),
+                                "timestamp": extract_value(row[9])
+                            }
+                            
+                            return {
+                                "success": True,
+                                "message": "Health metric recorded successfully in Turso",
+                                "data": health_metric
+                            }
+            else:
+                error_msg = result_info.get("error", {}).get("message", "Unknown error")
+                return {"success": False, "message": f"Database error: {error_msg}"}
         
         return {"success": False, "message": "Failed to create health metric"}
         
