@@ -401,6 +401,9 @@ def debug_database():
 
 @app.post("/debug/create-tables")
 def create_tables():
+    # First disable foreign keys
+    execute_sql("PRAGMA foreign_keys = OFF")
+    
     tables = {
         "users": "CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, full_name TEXT NOT NULL, email TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
         "devices": "CREATE TABLE IF NOT EXISTS devices (id INTEGER PRIMARY KEY AUTOINCREMENT, device_id TEXT NOT NULL, user_id INTEGER, model TEXT DEFAULT 'BioBand Pro', status TEXT DEFAULT 'active', registered_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
@@ -412,3 +415,8 @@ def create_tables():
         results[table_name] = execute_sql(sql)
     
     return {"success": True, "results": results}
+
+@app.post("/debug/disable-fk")
+def disable_foreign_keys():
+    result = execute_sql("PRAGMA foreign_keys = OFF")
+    return {"success": True, "result": result}
