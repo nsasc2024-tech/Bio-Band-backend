@@ -334,6 +334,37 @@ def create_health_metric(data: HealthMetricCreate):
     except:
         return {"success": False, "message": "Failed to create health metric"}
 
+@app.get("/health-metrics/{device_id}")
+def get_health_metrics_by_device(device_id: str):
+    try:
+        result = execute_sql(f"SELECT id, device_id, user_id, heart_rate, spo2, temperature, steps, calories, activity, timestamp FROM health_metrics WHERE device_id = '{device_id}' ORDER BY timestamp DESC")
+        
+        if "error" in result:
+            return {"success": False, "error": result["error"], "health_metrics": [], "count": 0}
+        
+        health_data = []
+        if result.get("results") and len(result["results"]) > 0:
+            response_result = result["results"][0].get("response", {})
+            if "result" in response_result and "rows" in response_result["result"]:
+                rows = response_result["result"]["rows"]
+                for row in rows:
+                    health_data.append({
+                        "id": extract_value(row[0]),
+                        "device_id": extract_value(row[1]),
+                        "user_id": extract_value(row[2]),
+                        "heart_rate": extract_value(row[3]),
+                        "spo2": extract_value(row[4]),
+                        "temperature": extract_value(row[5]),
+                        "steps": extract_value(row[6]),
+                        "calories": extract_value(row[7]),
+                        "activity": extract_value(row[8]),
+                        "timestamp": extract_value(row[9])
+                    })
+        
+        return {"success": True, "health_metrics": health_data, "count": len(health_data)}
+    except:
+        return {"success": True, "health_metrics": [], "count": 0}
+
 
 
 @app.get("/health")
