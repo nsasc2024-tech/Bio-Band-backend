@@ -228,6 +228,17 @@ def get_health_metrics_by_device(device_id: str):
 @app.post("/health-metrics/")
 def add_health_metric(data: HealthMetricCreate):
     try:
+        # First, ensure the device exists or create it
+        device_check = execute_turso_sql("SELECT id FROM devices WHERE device_id = ?", [data.device_id])
+        
+        if not (device_check and device_check.get("results") and device_check["results"][0].get("response", {}).get("result", {}).get("rows")):
+            # Device doesn't exist, create it
+            execute_turso_sql(
+                "INSERT OR IGNORE INTO devices (device_id, user_id, model, status) VALUES (?, ?, ?, ?)",
+                [data.device_id, 1, "BioBand Pro", "active"]
+            )
+        
+        # Insert health metric without foreign key constraints
         result = execute_turso_sql(
             "INSERT INTO health_metrics (device_id, user_id, heart_rate, spo2, temperature, steps, calories, activity, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [data.device_id, 1, data.heart_rate, data.spo2, data.temperature, data.steps, data.calories, data.activity, data.timestamp]
