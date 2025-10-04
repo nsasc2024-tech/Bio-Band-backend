@@ -9,36 +9,30 @@ import os
 
 app = FastAPI(title="Bio Band Health Monitoring API", version="3.0.0")
 
-# Turso Database Configuration
-DATABASE_URL = os.getenv("TURSO_DB_URL", "https://bioband-nsasc2024-tech.aws-ap-south-1.turso.io")
+# Environment variables
+DATABASE_URL = os.getenv("TURSO_DB_URL")
 DATABASE_TOKEN = os.getenv("TURSO_DB_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 def execute_turso_sql(sql, params=None):
+    if not DATABASE_TOKEN:
+        raise Exception("Database token not configured")
+    
     headers = {
         "Authorization": f"Bearer {DATABASE_TOKEN}",
         "Content-Type": "application/json"
     }
     
-    data = {
-        "requests": [
-            {
-                "type": "execute",
-                "stmt": {
-                    "sql": sql
-                }
-            }
-        ]
-    }
-    
+    data = {"requests": [{"type": "execute", "stmt": {"sql": sql}}]}
     if params:
         data["requests"][0]["stmt"]["args"] = params
     
     try:
         response = requests.post(f"{DATABASE_URL}/v2/pipeline", headers=headers, json=data, timeout=10)
-        response.raise_for_status()
+        if response.status_code != 200:
+            raise Exception(f"Database error: {response.status_code} - {response.text}")
         return response.json()
-    except requests.exceptions.RequestException as e:
+    except Exception as e:
         raise Exception(f"Database connection failed: {str(e)}")
 
 app.add_middleware(
@@ -75,14 +69,13 @@ def root():
         "message": "Bio Band Health Monitoring API",
         "status": "success",
         "version": "3.0.0",
-        "database_url": "libsql://bioband-nsasc2024-tech.aws-ap-south-1.turso.io",
         "endpoints": {
-            "GET /users/": "Get all users from Turso",
+            "GET /users/": "Get all users",
             "GET /users/{user_id}": "Get user by ID",
             "POST /users/": "Create user",
-            "GET /devices/": "Get all devices from Turso",
-            "GET /health-metrics/": "Get all health data from Turso",
-            "GET /health-metrics/device/{device_id}": "Get health data by device ID",
+            "GET /devices/": "Get all devices",
+            "GET /health-metrics/": "Get all health data",
+            "GET /health-metrics/device/{device_id}": "Get health data by device",
             "POST /health-metrics/": "Add health data",
             "POST /chat": "AI Health Assistant",
             "GET /chat/{session_id}": "Get chat history"
@@ -95,167 +88,133 @@ def get_all_users():
         result = execute_turso_sql("SELECT id, full_name, email, created_at FROM users ORDER BY id")
         
         users_data = []
-        if result.get("results") and len(result["results"]) > 0:
-            response_result = result["results"][0].get("response", {})
-            if "result" in response_result and "rows" in response_result["result"]:
-                rows = response_result["result"]["rows"]
-                for row in rows:
-                    users_data.append({
-                        "id": row[0]["value"] if isinstance(row[0], dict) else row[0],
-                        "full_name": row[1]["value"] if isinstance(row[1], dict) else row[1],
-                        "email": row[2]["value"] if isinstance(row[2], dict) else row[2],
-                        "created_at": row[3]["value"] if isinstance(row[3], dict) else row[3]
-                    })
+        if result.get("results") and result["results"][0].get("response", {}).get("result", {}).get("rows"):
+            rows = result["results"][0]["response"]["result"]["rows"]
+            for row in rows:
+                users_data.append({
+                    "id": str(row[0]),
+                    "full_name": str(row[1]),
+                    "email": str(row[2]),
+                    "created_at": str(row[3])
+                })
         
-        return {
-            "success": True,
-            "users": users_data,
-            "count": len(users_data)
-        }
+        return {"success": True, "users": users_data, "count": len(users_data)}
         
     except Exception as e:
-        return {
-            "success": False,
-            "error": str(e),
-            "users": [],
-            "count": 0
-        }
+        return {"success": False, "error": str(e), "users": [], "count": 0}
+
+@app.get("/users/{user_id}")
+def get_user_by_id(user_id: int):
+    try:
+        result = execute_turso_sql("SELECT id, full_name, email, created_at FROM users WHERE id = ?", [user_id])
+        
+        if result.get("results") and result["results"][0].get("response", {}).get("result", {}).get("rows"):
+            rows = result["results"][0]["response"]["result"]["rows"]
+            if rows:
+                row = rows[0]
+                user_data = {
+                    "id": str(row[0]),
+                    "full_name": str(row[1]),
+                    "email": str(row[2]),
+                    "created_at": str(row[3])
+                }
+                return {"success": True, "user": user_data}
+        
+        return {"success": False, "error": "User not found", "user_id": user_id}
+        
+    except Exception as e:
+        return {"success": False, "error": str(e), "user_id": user_id}
 
 @app.post("/users/")
 def create_user(user: UserCreate):
     try:
-        insert_result = execute_turso_sql(
-            "INSERT INTO users (full_name, email) VALUES (?, ?)",
-            [user.full_name, user.email]
-        )
-        
-        if insert_result.get("results"):
-            get_result = execute_turso_sql("SELECT id, full_name, email, created_at FROM users ORDER BY id DESC LIMIT 1")
-            
-            if get_result.get("results") and len(get_result["results"]) > 0:
-                response_result = get_result["results"][0].get("response", {})
-                if "result" in response_result and "rows" in response_result["result"]:
-                    rows = response_result["result"]["rows"]
-                    if len(rows) > 0:
-                        row = rows[0]
-                        new_user = {
-                            "id": row[0]["value"] if isinstance(row[0], dict) else row[0],
-                            "full_name": row[1]["value"] if isinstance(row[1], dict) else row[1],
-                            "email": row[2]["value"] if isinstance(row[2], dict) else row[2],
-                            "created_at": row[3]["value"] if isinstance(row[3], dict) else row[3]
-                        }
-                        
-                        return {
-                            "success": True,
-                            "message": "User created successfully",
-                            "user": new_user
-                        }
-        
-        return {"success": False, "message": "Failed to create user"}
-        
+        execute_turso_sql("INSERT INTO users (full_name, email) VALUES (?, ?)", [user.full_name, user.email])
+        return {"success": True, "message": "User created successfully"}
     except Exception as e:
         return {"success": False, "message": f"Error: {str(e)}"}
 
 @app.get("/devices/")
 def get_all_devices():
     try:
-        result = execute_turso_sql("SELECT id, device_id, user_id, model, status, registered_at FROM devices ORDER BY id")
+        result = execute_turso_sql("SELECT id, device_id, user_id, model, status FROM devices ORDER BY id")
         
         devices_data = []
-        if result.get("results") and len(result["results"]) > 0:
-            response_result = result["results"][0].get("response", {})
-            if "result" in response_result and "rows" in response_result["result"]:
-                rows = response_result["result"]["rows"]
-                for row in rows:
-                    devices_data.append({
-                        "id": row[0]["value"] if isinstance(row[0], dict) else row[0],
-                        "device_id": row[1]["value"] if isinstance(row[1], dict) else row[1],
-                        "user_id": row[2]["value"] if isinstance(row[2], dict) else row[2],
-                        "model": row[3]["value"] if isinstance(row[3], dict) else row[3],
-                        "status": row[4]["value"] if isinstance(row[4], dict) else row[4],
-                        "registered_at": row[5]["value"] if isinstance(row[5], dict) else row[5]
-                    })
+        if result.get("results") and result["results"][0].get("response", {}).get("result", {}).get("rows"):
+            rows = result["results"][0]["response"]["result"]["rows"]
+            for row in rows:
+                devices_data.append({
+                    "id": str(row[0]),
+                    "device_id": str(row[1]),
+                    "user_id": str(row[2]),
+                    "model": str(row[3]),
+                    "status": str(row[4])
+                })
         
-        return {
-            "success": True,
-            "devices": devices_data,
-            "count": len(devices_data)
-        }
+        return {"success": True, "devices": devices_data, "count": len(devices_data)}
         
     except Exception as e:
-        return {
-            "success": False,
-            "error": str(e),
-            "devices": [],
-            "count": 0
-        }
+        return {"success": False, "error": str(e), "devices": [], "count": 0}
 
 @app.get("/health-metrics/")
 def get_all_health_metrics():
     try:
-        result = execute_turso_sql("SELECT id, device_id, user_id, heart_rate, spo2, temperature, steps, calories, activity, timestamp FROM health_metrics ORDER BY id DESC")
+        result = execute_turso_sql("SELECT id, device_id, heart_rate, spo2, temperature, steps, calories, activity, timestamp FROM health_metrics ORDER BY id DESC LIMIT 20")
         
         health_data = []
-        if result.get("results") and len(result["results"]) > 0:
-            response_result = result["results"][0].get("response", {})
-            if "result" in response_result and "rows" in response_result["result"]:
-                rows = response_result["result"]["rows"]
-                for row in rows:
-                    health_data.append({
-                        "id": row[0]["value"] if isinstance(row[0], dict) else row[0],
-                        "device_id": row[1]["value"] if isinstance(row[1], dict) else row[1],
-                        "user_id": row[2]["value"] if isinstance(row[2], dict) else row[2],
-                        "heart_rate": row[3]["value"] if isinstance(row[3], dict) else row[3],
-                        "spo2": row[4]["value"] if isinstance(row[4], dict) else row[4],
-                        "temperature": row[5]["value"] if isinstance(row[5], dict) else row[5],
-                        "steps": row[6]["value"] if isinstance(row[6], dict) else row[6],
-                        "calories": row[7]["value"] if isinstance(row[7], dict) else row[7],
-                        "activity": row[8]["value"] if isinstance(row[8], dict) else row[8],
-                        "timestamp": row[9]["value"] if isinstance(row[9], dict) else row[9]
-                    })
+        if result.get("results") and result["results"][0].get("response", {}).get("result", {}).get("rows"):
+            rows = result["results"][0]["response"]["result"]["rows"]
+            for row in rows:
+                health_data.append({
+                    "id": str(row[0]),
+                    "device_id": str(row[1]),
+                    "heart_rate": str(row[2]) if row[2] else None,
+                    "spo2": str(row[3]) if row[3] else None,
+                    "temperature": float(row[4]) if row[4] else None,
+                    "steps": str(row[5]) if row[5] else None,
+                    "calories": str(row[6]) if row[6] else None,
+                    "activity": str(row[7]) if row[7] else None,
+                    "timestamp": str(row[8]) if row[8] else None
+                })
         
-        return {
-            "success": True,
-            "health_metrics": health_data,
-            "count": len(health_data)
-        }
+        return {"success": True, "health_metrics": health_data, "count": len(health_data)}
         
     except Exception as e:
-        return {
-            "success": False,
-            "error": str(e),
-            "health_metrics": [],
-            "count": 0
-        }
+        return {"success": False, "error": str(e), "health_metrics": [], "count": 0}
+
+@app.get("/health-metrics/device/{device_id}")
+def get_health_metrics_by_device(device_id: str):
+    try:
+        result = execute_turso_sql("SELECT id, device_id, heart_rate, spo2, temperature, steps, calories, activity, timestamp FROM health_metrics WHERE device_id = ? ORDER BY timestamp DESC", [device_id])
+        
+        health_data = []
+        if result.get("results") and result["results"][0].get("response", {}).get("result", {}).get("rows"):
+            rows = result["results"][0]["response"]["result"]["rows"]
+            for row in rows:
+                health_data.append({
+                    "id": str(row[0]),
+                    "device_id": str(row[1]),
+                    "heart_rate": str(row[2]) if row[2] else None,
+                    "spo2": str(row[3]) if row[3] else None,
+                    "temperature": float(row[4]) if row[4] else None,
+                    "steps": str(row[5]) if row[5] else None,
+                    "calories": str(row[6]) if row[6] else None,
+                    "activity": str(row[7]) if row[7] else None,
+                    "timestamp": str(row[8]) if row[8] else None
+                })
+        
+        return {"success": True, "device_id": device_id, "health_metrics": health_data, "count": len(health_data)}
+        
+    except Exception as e:
+        return {"success": False, "error": str(e), "device_id": device_id, "health_metrics": [], "count": 0}
 
 @app.post("/health-metrics/")
 def add_health_metric(data: HealthMetricCreate):
     try:
-        user_id = 1  # Default user for now
-        
-        insert_result = execute_turso_sql(
+        execute_turso_sql(
             "INSERT INTO health_metrics (device_id, user_id, heart_rate, spo2, temperature, steps, calories, activity, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            [data.device_id, user_id, data.heart_rate, data.spo2, data.temperature, data.steps, data.calories, data.activity, data.timestamp]
+            [data.device_id, 1, data.heart_rate, data.spo2, data.temperature, data.steps, data.calories, data.activity, data.timestamp]
         )
-        
-        if insert_result.get("results"):
-            return {
-                "success": True,
-                "message": "Health metric recorded successfully",
-                "data": {
-                    "device_id": data.device_id,
-                    "timestamp": data.timestamp,
-                    "heart_rate": data.heart_rate,
-                    "spo2": data.spo2,
-                    "temperature": data.temperature,
-                    "steps": data.steps,
-                    "calories": data.calories,
-                    "activity": data.activity
-                }
-            }
-        
-        return {"success": False, "message": "Failed to record health metric"}
-        
+        return {"success": True, "message": "Health metric recorded successfully"}
     except Exception as e:
         return {"success": False, "message": f"Error: {str(e)}"}
 
@@ -268,44 +227,25 @@ async def chat(request: MessageRequest):
         sessions[request.session_id] = []
     
     timestamp = datetime.now().isoformat()
-    sessions[request.session_id].append({
-        "role": "user", 
-        "message": request.message,
-        "timestamp": timestamp
-    })
+    sessions[request.session_id].append({"role": "user", "message": request.message, "timestamp": timestamp})
     
     try:
         response = requests.post(
             "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent",
-            headers={
-                "Content-Type": "application/json",
-                "X-goog-api-key": GEMINI_API_KEY,
-            },
+            headers={"Content-Type": "application/json", "X-goog-api-key": GEMINI_API_KEY},
             json={
-                "contents": [{
-                    "parts": [{"text": f"You are Bio Band AI Assistant, a health companion for Bio Band users. You act as a mini doctor providing health-related assistance. Use simple English words that everyone can understand. If the question is not health-related, respond with 'I cannot help with that, I only assist with health-related queries.' Current question: {request.message}"}]
-                }],
+                "contents": [{"parts": [{"text": f"You are Bio Band AI Assistant. Only answer health questions in simple English. If not health-related, say 'I only help with health questions.' Question: {request.message}"}]}],
                 "generationConfig": {"maxOutputTokens": 150}
             },
             timeout=30
         )
         
         if response.status_code == 200:
-            data = response.json()
-            ai_response = data["candidates"][0]["content"]["parts"][0]["text"]
-            sessions[request.session_id].append({
-                "role": "assistant", 
-                "message": ai_response,
-                "timestamp": datetime.now().isoformat()
-            })
-            return {
-                "success": True,
-                "response": ai_response.strip().replace("**", "").replace("*", ""),
-                "session_id": request.session_id,
-                "timestamp": timestamp
-            }
+            ai_response = response.json()["candidates"][0]["content"]["parts"][0]["text"]
+            sessions[request.session_id].append({"role": "assistant", "message": ai_response, "timestamp": datetime.now().isoformat()})
+            return {"success": True, "response": ai_response.strip(), "session_id": request.session_id}
         else:
-            return {"success": False, "error": f"API Error: {response.status_code}"}
+            return {"success": False, "error": f"AI API Error: {response.status_code}"}
             
     except Exception as e:
         return {"success": False, "error": str(e)}
@@ -313,101 +253,9 @@ async def chat(request: MessageRequest):
 @app.get("/chat/{session_id}")
 async def get_chat_history(session_id: str):
     if session_id in sessions:
-        return {
-            "success": True,
-            "session_id": session_id, 
-            "history": sessions[session_id],
-            "message_count": len(sessions[session_id])
-        }
-    return {
-        "success": True,
-        "session_id": session_id, 
-        "history": [],
-        "message_count": 0
-    }
-
-@app.get("/health-metrics/device/{device_id}")
-def get_health_metrics_by_device(device_id: str):
-    try:
-        result = execute_turso_sql(
-            "SELECT id, device_id, user_id, heart_rate, spo2, temperature, steps, calories, activity, timestamp FROM health_metrics WHERE device_id = ? ORDER BY timestamp DESC",
-            [device_id]
-        )
-        
-        health_data = []
-        if result.get("results") and len(result["results"]) > 0:
-            response_result = result["results"][0].get("response", {})
-            if "result" in response_result and "rows" in response_result["result"]:
-                rows = response_result["result"]["rows"]
-                for row in rows:
-                    health_data.append({
-                        "id": row[0]["value"] if isinstance(row[0], dict) else row[0],
-                        "device_id": row[1]["value"] if isinstance(row[1], dict) else row[1],
-                        "user_id": row[2]["value"] if isinstance(row[2], dict) else row[2],
-                        "heart_rate": row[3]["value"] if isinstance(row[3], dict) else row[3],
-                        "spo2": row[4]["value"] if isinstance(row[4], dict) else row[4],
-                        "temperature": row[5]["value"] if isinstance(row[5], dict) else row[5],
-                        "steps": row[6]["value"] if isinstance(row[6], dict) else row[6],
-                        "calories": row[7]["value"] if isinstance(row[7], dict) else row[7],
-                        "activity": row[8]["value"] if isinstance(row[8], dict) else row[8],
-                        "timestamp": row[9]["value"] if isinstance(row[9], dict) else row[9]
-                    })
-        
-        return {
-            "success": True,
-            "device_id": device_id,
-            "health_metrics": health_data,
-            "count": len(health_data)
-        }
-        
-    except Exception as e:
-        return {
-            "success": False,
-            "error": str(e),
-            "device_id": device_id,
-            "health_metrics": [],
-            "count": 0
-        }
-
-@app.get("/users/{user_id}")
-def get_user_by_id(user_id: int):
-    try:
-        result = execute_turso_sql(
-            "SELECT id, full_name, email, created_at FROM users WHERE id = ?",
-            [user_id]
-        )
-        
-        if result.get("results") and len(result["results"]) > 0:
-            response_result = result["results"][0].get("response", {})
-            if "result" in response_result and "rows" in response_result["result"]:
-                rows = response_result["result"]["rows"]
-                if len(rows) > 0:
-                    row = rows[0]
-                    user_data = {
-                        "id": row[0]["value"] if isinstance(row[0], dict) else row[0],
-                        "full_name": row[1]["value"] if isinstance(row[1], dict) else row[1],
-                        "email": row[2]["value"] if isinstance(row[2], dict) else row[2],
-                        "created_at": row[3]["value"] if isinstance(row[3], dict) else row[3]
-                    }
-                    
-                    return {
-                        "success": True,
-                        "user": user_data
-                    }
-        
-        return {
-            "success": False,
-            "error": "User not found",
-            "user_id": user_id
-        }
-        
-    except Exception as e:
-        return {
-            "success": False,
-            "error": str(e),
-            "user_id": user_id
-        }
+        return {"success": True, "session_id": session_id, "history": sessions[session_id], "message_count": len(sessions[session_id])}
+    return {"success": True, "session_id": session_id, "history": [], "message_count": 0}
 
 @app.get("/health")
 def health_check():
-    return {"status": "healthy", "timestamp": datetime.now().isoformat(), "database": "Turso Connected"}
+    return {"status": "healthy", "timestamp": datetime.now().isoformat(), "database": "Connected" if DATABASE_TOKEN else "Not configured"}
