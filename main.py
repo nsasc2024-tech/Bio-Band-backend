@@ -141,8 +141,13 @@ def get_user_by_id(user_id: int):
 @app.post("/users/")
 def create_user(user: UserCreate):
     try:
-        execute_turso_sql("INSERT INTO users (full_name, email) VALUES (?, ?)", [user.full_name, user.email])
-        return {"success": True, "message": "User created successfully"}
+        result = execute_turso_sql("INSERT INTO users (full_name, email) VALUES (?, ?)", [user.full_name, user.email])
+        
+        if result and result.get("results") and result["results"][0].get("type") == "ok":
+            return {"success": True, "message": "User created successfully"}
+        else:
+            return {"success": False, "message": "Failed to create user", "debug": result}
+            
     except Exception as e:
         return {"success": False, "message": f"Error: {str(e)}"}
 
@@ -223,11 +228,40 @@ def get_health_metrics_by_device(device_id: str):
 @app.post("/health-metrics/")
 def add_health_metric(data: HealthMetricCreate):
     try:
-        execute_turso_sql(
+        result = execute_turso_sql(
             "INSERT INTO health_metrics (device_id, user_id, heart_rate, spo2, temperature, steps, calories, activity, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [data.device_id, 1, data.heart_rate, data.spo2, data.temperature, data.steps, data.calories, data.activity, data.timestamp]
         )
-        return {"success": True, "message": "Health metric recorded successfully"}
+        
+        # Check if insert was successful
+        if result and result.get("results") and result["results"][0].get("type") == "ok":
+            # Get the inserted record to confirm
+            get_result = execute_turso_sql(
+                "SELECT id, device_id, heart_rate, spo2, temperature, steps, calories, activity, timestamp FROM health_metrics WHERE device_id = ? ORDER BY id DESC LIMIT 1",
+                [data.device_id]
+            )
+            
+            if get_result and get_result.get("results") and get_result["results"][0].get("response", {}).get("result", {}).get("rows"):
+                row = get_result["results"][0]["response"]["result"]["rows"][0]
+                inserted_data = {
+                    "id": row[0]["value"] if isinstance(row[0], dict) else str(row[0]),
+                    "device_id": row[1]["value"] if isinstance(row[1], dict) else str(row[1]),
+                    "heart_rate": row[2]["value"] if isinstance(row[2], dict) else row[2],
+                    "spo2": row[3]["value"] if isinstance(row[3], dict) else row[3],
+                    "temperature": row[4]["value"] if isinstance(row[4], dict) else row[4],
+                    "steps": row[5]["value"] if isinstance(row[5], dict) else row[5],
+                    "calories": row[6]["value"] if isinstance(row[6], dict) else row[6],
+                    "activity": row[7]["value"] if isinstance(row[7], dict) else row[7],
+                    "timestamp": row[8]["value"] if isinstance(row[8], dict) else row[8]
+                }
+                return {
+                    "success": True, 
+                    "message": "Health metric recorded successfully",
+                    "data": inserted_data
+                }
+        
+        return {"success": False, "message": "Failed to insert health metric", "debug": result}
+        
     except Exception as e:
         return {"success": False, "message": f"Error: {str(e)}"}
 
