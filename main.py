@@ -25,7 +25,18 @@ def execute_turso_sql(sql, params=None):
     
     data = {"requests": [{"type": "execute", "stmt": {"sql": sql}}]}
     if params:
-        data["requests"][0]["stmt"]["args"] = params
+        # Convert params to proper Turso format
+        turso_params = []
+        for param in params:
+            if isinstance(param, str):
+                turso_params.append({"type": "text", "value": param})
+            elif isinstance(param, int):
+                turso_params.append({"type": "integer", "value": str(param)})
+            elif isinstance(param, float):
+                turso_params.append({"type": "float", "value": str(param)})
+            else:
+                turso_params.append({"type": "text", "value": str(param)})
+        data["requests"][0]["stmt"]["args"] = turso_params
     
     try:
         response = requests.post(f"{DATABASE_URL}/v2/pipeline", headers=headers, json=data, timeout=10)
