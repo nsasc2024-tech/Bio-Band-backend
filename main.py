@@ -28,12 +28,14 @@ def execute_turso_sql(sql, params=None):
         # Convert params to proper Turso format
         turso_params = []
         for param in params:
-            if isinstance(param, str):
+            if param is None:
+                turso_params.append({"type": "null", "value": None})
+            elif isinstance(param, str):
                 turso_params.append({"type": "text", "value": param})
             elif isinstance(param, int):
                 turso_params.append({"type": "integer", "value": str(param)})
             elif isinstance(param, float):
-                turso_params.append({"type": "float", "value": str(param)})
+                turso_params.append({"type": "float", "value": param})
             else:
                 turso_params.append({"type": "text", "value": str(param)})
         data["requests"][0]["stmt"]["args"] = turso_params
