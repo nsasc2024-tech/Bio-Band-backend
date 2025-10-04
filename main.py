@@ -70,6 +70,12 @@ class UserCreate(BaseModel):
     full_name: str
     email: str
 
+class DeviceCreate(BaseModel):
+    device_id: str
+    user_id: int
+    model: str = "BioBand Pro"
+    status: str = "active"
+
 class MessageRequest(BaseModel):
     message: str
     session_id: str = "default"
@@ -87,6 +93,7 @@ def root():
             "GET /users/{user_id}": "Get user by ID",
             "POST /users/": "Create user",
             "GET /devices/": "Get all devices",
+            "POST /devices/": "Create new device",
             "GET /health-metrics/": "Get all health data",
             "GET /health-metrics/device/{device_id}": "Get health data by device",
             "POST /health-metrics/": "Add health data",
@@ -172,6 +179,31 @@ def get_all_devices():
         
     except Exception as e:
         return {"success": False, "error": str(e), "devices": [], "count": 0}
+
+@app.post("/devices/")
+def create_device(device: DeviceCreate):
+    try:
+        result = execute_turso_sql(
+            "INSERT INTO devices (device_id, user_id, model, status) VALUES (?, ?, ?, ?)",
+            [device.device_id, device.user_id, device.model, device.status]
+        )
+        
+        if result and result.get("results") and result["results"][0].get("type") == "ok":
+            return {
+                "success": True,
+                "message": "Device created successfully",
+                "device": {
+                    "device_id": device.device_id,
+                    "user_id": device.user_id,
+                    "model": device.model,
+                    "status": device.status
+                }
+            }
+        
+        return {"success": False, "message": "Failed to create device", "debug": result}
+        
+    except Exception as e:
+        return {"success": False, "message": f"Error: {str(e)}"}
 
 @app.get("/health-metrics/")
 def get_all_health_metrics():
