@@ -171,7 +171,7 @@ def get_all_devices():
 @app.get("/health-metrics/")
 def get_all_health_metrics():
     try:
-        result = execute_turso_sql("SELECT id, device_id, heart_rate, spo2, temperature, steps, calories, activity, timestamp FROM health_metrics ORDER BY id DESC LIMIT 20")
+        result = execute_turso_sql("SELECT id, device_id, heart_rate, spo2, temperature, steps, calories, activity, timestamp FROM health_metrics ORDER BY id DESC LIMIT 50")
         
         health_data = []
         if result.get("results") and result["results"][0].get("response", {}).get("result", {}).get("rows"):
