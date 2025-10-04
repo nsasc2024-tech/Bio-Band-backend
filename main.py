@@ -92,10 +92,10 @@ def get_all_users():
             rows = result["results"][0]["response"]["result"]["rows"]
             for row in rows:
                 users_data.append({
-                    "id": str(row[0]),
-                    "full_name": str(row[1]),
-                    "email": str(row[2]),
-                    "created_at": str(row[3])
+                    "id": row[0]["value"] if isinstance(row[0], dict) and "value" in row[0] else str(row[0]),
+                    "full_name": row[1]["value"] if isinstance(row[1], dict) and "value" in row[1] else str(row[1]),
+                    "email": row[2]["value"] if isinstance(row[2], dict) and "value" in row[2] else str(row[2]),
+                    "created_at": row[3]["value"] if isinstance(row[3], dict) and "value" in row[3] else str(row[3])
                 })
         
         return {"success": True, "users": users_data, "count": len(users_data)}
@@ -113,10 +113,10 @@ def get_user_by_id(user_id: int):
             if rows:
                 row = rows[0]
                 user_data = {
-                    "id": str(row[0]),
-                    "full_name": str(row[1]),
-                    "email": str(row[2]),
-                    "created_at": str(row[3])
+                    "id": row[0]["value"] if isinstance(row[0], dict) and "value" in row[0] else str(row[0]),
+                    "full_name": row[1]["value"] if isinstance(row[1], dict) and "value" in row[1] else str(row[1]),
+                    "email": row[2]["value"] if isinstance(row[2], dict) and "value" in row[2] else str(row[2]),
+                    "created_at": row[3]["value"] if isinstance(row[3], dict) and "value" in row[3] else str(row[3])
                 }
                 return {"success": True, "user": user_data}
         
@@ -143,11 +143,11 @@ def get_all_devices():
             rows = result["results"][0]["response"]["result"]["rows"]
             for row in rows:
                 devices_data.append({
-                    "id": str(row[0]),
-                    "device_id": str(row[1]),
-                    "user_id": str(row[2]),
-                    "model": str(row[3]),
-                    "status": str(row[4])
+                    "id": row[0]["value"] if isinstance(row[0], dict) and "value" in row[0] else str(row[0]),
+                    "device_id": row[1]["value"] if isinstance(row[1], dict) and "value" in row[1] else str(row[1]),
+                    "user_id": row[2]["value"] if isinstance(row[2], dict) and "value" in row[2] else str(row[2]),
+                    "model": row[3]["value"] if isinstance(row[3], dict) and "value" in row[3] else str(row[3]),
+                    "status": row[4]["value"] if isinstance(row[4], dict) and "value" in row[4] else str(row[4])
                 })
         
         return {"success": True, "devices": devices_data, "count": len(devices_data)}
@@ -165,15 +165,15 @@ def get_all_health_metrics():
             rows = result["results"][0]["response"]["result"]["rows"]
             for row in rows:
                 health_data.append({
-                    "id": str(row[0]),
-                    "device_id": str(row[1]),
-                    "heart_rate": str(row[2]) if row[2] else None,
-                    "spo2": str(row[3]) if row[3] else None,
-                    "temperature": float(row[4]) if row[4] else None,
-                    "steps": str(row[5]) if row[5] else None,
-                    "calories": str(row[6]) if row[6] else None,
-                    "activity": str(row[7]) if row[7] else None,
-                    "timestamp": str(row[8]) if row[8] else None
+                    "id": row[0]["value"] if isinstance(row[0], dict) and "value" in row[0] else str(row[0]),
+                    "device_id": row[1]["value"] if isinstance(row[1], dict) and "value" in row[1] else str(row[1]),
+                    "heart_rate": row[2]["value"] if isinstance(row[2], dict) and "value" in row[2] else row[2],
+                    "spo2": row[3]["value"] if isinstance(row[3], dict) and "value" in row[3] else row[3],
+                    "temperature": float(row[4]["value"]) if isinstance(row[4], dict) and "value" in row[4] and row[4]["value"] else row[4],
+                    "steps": row[5]["value"] if isinstance(row[5], dict) and "value" in row[5] else row[5],
+                    "calories": row[6]["value"] if isinstance(row[6], dict) and "value" in row[6] else row[6],
+                    "activity": row[7]["value"] if isinstance(row[7], dict) and "value" in row[7] else row[7],
+                    "timestamp": row[8]["value"] if isinstance(row[8], dict) and "value" in row[8] else row[8]
                 })
         
         return {"success": True, "health_metrics": health_data, "count": len(health_data)}
@@ -191,15 +191,15 @@ def get_health_metrics_by_device(device_id: str):
             rows = result["results"][0]["response"]["result"]["rows"]
             for row in rows:
                 health_data.append({
-                    "id": str(row[0]),
-                    "device_id": str(row[1]),
-                    "heart_rate": str(row[2]) if row[2] else None,
-                    "spo2": str(row[3]) if row[3] else None,
-                    "temperature": float(row[4]) if row[4] else None,
-                    "steps": str(row[5]) if row[5] else None,
-                    "calories": str(row[6]) if row[6] else None,
-                    "activity": str(row[7]) if row[7] else None,
-                    "timestamp": str(row[8]) if row[8] else None
+                    "id": row[0]["value"] if isinstance(row[0], dict) and "value" in row[0] else str(row[0]),
+                    "device_id": row[1]["value"] if isinstance(row[1], dict) and "value" in row[1] else str(row[1]),
+                    "heart_rate": row[2]["value"] if isinstance(row[2], dict) and "value" in row[2] else row[2],
+                    "spo2": row[3]["value"] if isinstance(row[3], dict) and "value" in row[3] else row[3],
+                    "temperature": float(row[4]["value"]) if isinstance(row[4], dict) and "value" in row[4] and row[4]["value"] else row[4],
+                    "steps": row[5]["value"] if isinstance(row[5], dict) and "value" in row[5] else row[5],
+                    "calories": row[6]["value"] if isinstance(row[6], dict) and "value" in row[6] else row[6],
+                    "activity": row[7]["value"] if isinstance(row[7], dict) and "value" in row[7] else row[7],
+                    "timestamp": row[8]["value"] if isinstance(row[8], dict) and "value" in row[8] else row[8]
                 })
         
         return {"success": True, "device_id": device_id, "health_metrics": health_data, "count": len(health_data)}
