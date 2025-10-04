@@ -78,9 +78,11 @@ def root():
         "database_url": "libsql://bioband-nsasc2024-tech.aws-ap-south-1.turso.io",
         "endpoints": {
             "GET /users/": "Get all users from Turso",
+            "GET /users/{user_id}": "Get user by ID",
             "POST /users/": "Create user",
             "GET /devices/": "Get all devices from Turso",
             "GET /health-metrics/": "Get all health data from Turso",
+            "GET /health-metrics/device/{device_id}": "Get health data by device ID",
             "POST /health-metrics/": "Add health data",
             "POST /chat": "AI Health Assistant",
             "GET /chat/{session_id}": "Get chat history"
@@ -323,6 +325,88 @@ async def get_chat_history(session_id: str):
         "history": [],
         "message_count": 0
     }
+
+@app.get("/health-metrics/device/{device_id}")
+def get_health_metrics_by_device(device_id: str):
+    try:
+        result = execute_turso_sql(
+            "SELECT id, device_id, user_id, heart_rate, spo2, temperature, steps, calories, activity, timestamp FROM health_metrics WHERE device_id = ? ORDER BY timestamp DESC",
+            [device_id]
+        )
+        
+        health_data = []
+        if result.get("results") and len(result["results"]) > 0:
+            response_result = result["results"][0].get("response", {})
+            if "result" in response_result and "rows" in response_result["result"]:
+                rows = response_result["result"]["rows"]
+                for row in rows:
+                    health_data.append({
+                        "id": row[0]["value"] if isinstance(row[0], dict) else row[0],
+                        "device_id": row[1]["value"] if isinstance(row[1], dict) else row[1],
+                        "user_id": row[2]["value"] if isinstance(row[2], dict) else row[2],
+                        "heart_rate": row[3]["value"] if isinstance(row[3], dict) else row[3],
+                        "spo2": row[4]["value"] if isinstance(row[4], dict) else row[4],
+                        "temperature": row[5]["value"] if isinstance(row[5], dict) else row[5],
+                        "steps": row[6]["value"] if isinstance(row[6], dict) else row[6],
+                        "calories": row[7]["value"] if isinstance(row[7], dict) else row[7],
+                        "activity": row[8]["value"] if isinstance(row[8], dict) else row[8],
+                        "timestamp": row[9]["value"] if isinstance(row[9], dict) else row[9]
+                    })
+        
+        return {
+            "success": True,
+            "device_id": device_id,
+            "health_metrics": health_data,
+            "count": len(health_data)
+        }
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "device_id": device_id,
+            "health_metrics": [],
+            "count": 0
+        }
+
+@app.get("/users/{user_id}")
+def get_user_by_id(user_id: int):
+    try:
+        result = execute_turso_sql(
+            "SELECT id, full_name, email, created_at FROM users WHERE id = ?",
+            [user_id]
+        )
+        
+        if result.get("results") and len(result["results"]) > 0:
+            response_result = result["results"][0].get("response", {})
+            if "result" in response_result and "rows" in response_result["result"]:
+                rows = response_result["result"]["rows"]
+                if len(rows) > 0:
+                    row = rows[0]
+                    user_data = {
+                        "id": row[0]["value"] if isinstance(row[0], dict) else row[0],
+                        "full_name": row[1]["value"] if isinstance(row[1], dict) else row[1],
+                        "email": row[2]["value"] if isinstance(row[2], dict) else row[2],
+                        "created_at": row[3]["value"] if isinstance(row[3], dict) else row[3]
+                    }
+                    
+                    return {
+                        "success": True,
+                        "user": user_data
+                    }
+        
+        return {
+            "success": False,
+            "error": "User not found",
+            "user_id": user_id
+        }
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "user_id": user_id
+        }
 
 @app.get("/health")
 def health_check():
