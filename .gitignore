@@ -1,31 +1,24 @@
-# Python
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
-env/
-venv/
-.venv/
-*.egg-info/
-dist/
-build/
-
 # Environment variables
 .env
 .env.local
 .env.production
 
-# Database
-*.db
-*.sqlite
-*.sqlite3
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+
+# Vercel
+.vercel/
 
 # IDE
 .vscode/
 .idea/
-*.swp
-*.swo
 
 # OS
 .DS_Store
@@ -33,17 +26,8 @@ Thumbs.db
 
 # Logs
 *.log
-logs/
 
-# Vercel
-.vercel/
-
-# Testing
-.pytest_cache/
-.coverage
-htmlcov/
-
-# Temporary files
-*.tmp
-*.temp
-temp/
+# Test files
+test_*.py
+simple_*.py
+verify_*.py

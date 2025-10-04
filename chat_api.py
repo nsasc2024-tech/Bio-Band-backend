@@ -3,7 +3,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import requests
 import os
+from dotenv import load_dotenv
 from datetime import datetime
+
+load_dotenv()
 
 app = FastAPI(title="Bio Band AI Health Assistant", version="1.0.0")
 
@@ -24,23 +27,8 @@ API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-fl
 
 sessions = {}
 
-@app.get("/")
-async def root():
-    return {
-        "message": "Bio Band AI Health Assistant",
-        "version": "1.0.0",
-        "status": "active",
-        "endpoints": {
-            "POST /chat": "Send health questions to AI",
-            "GET /chat/{session_id}": "Get chat history"
-        }
-    }
-
 @app.post("/chat")
 async def chat(request: MessageRequest):
-    if not API_KEY:
-        return {"success": False, "error": "API key not configured"}
-    
     if request.session_id not in sessions:
         sessions[request.session_id] = []
     
@@ -102,3 +90,19 @@ async def get_chat_history(session_id: str):
         "history": [],
         "message_count": 0
     }
+
+@app.get("/")
+async def root():
+    return {
+        "message": "Bio Band AI Health Assistant",
+        "version": "1.0.0",
+        "status": "active",
+        "endpoints": {
+            "POST /chat": "Send health questions to AI",
+            "GET /chat/{session_id}": "Get chat history"
+        }
+    }
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8001)

@@ -3,9 +3,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import requests
 import os
+from dotenv import load_dotenv
 from datetime import datetime
 
-app = FastAPI(title="Bio Band AI Health Assistant", version="1.0.0")
+load_dotenv()
+
+app = FastAPI(title="Bio Band Medical API", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -22,25 +25,13 @@ class MessageRequest(BaseModel):
 API_KEY = os.getenv("GEMINI_API_KEY")
 API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
 
-sessions = {}
+if not API_KEY:
+    raise ValueError("GEMINI_API_KEY environment variable is required")
 
-@app.get("/")
-async def root():
-    return {
-        "message": "Bio Band AI Health Assistant",
-        "version": "1.0.0",
-        "status": "active",
-        "endpoints": {
-            "POST /chat": "Send health questions to AI",
-            "GET /chat/{session_id}": "Get chat history"
-        }
-    }
+sessions = {}
 
 @app.post("/chat")
 async def chat(request: MessageRequest):
-    if not API_KEY:
-        return {"success": False, "error": "API key not configured"}
-    
     if request.session_id not in sessions:
         sessions[request.session_id] = []
     
@@ -60,7 +51,7 @@ async def chat(request: MessageRequest):
             },
             json={
                 "contents": [{
-                    "parts": [{"text": f"You are Bio Band AI Assistant, a health companion for Bio Band users. You act as a mini doctor providing health-related assistance. Use simple English words that everyone can understand. If the question is not health-related, respond with 'I cannot help with that, I only assist with health-related queries.' Current question: {request.message}"}]
+                    "parts": [{"text": f"You are Bio Band AI Assistant, a health companion for Bio Band users. You act as a mini doctor providing health-related assistance. Use simple English words that everyone can understand. If the question is not health-related, respond with 'I cannot help with that, I only assist with health-related queries.' Previous conversation: {sessions[request.session_id][-10:] if len(sessions[request.session_id]) > 1 else []}. Current question: {request.message}"}]
                 }],
                 "generationConfig": {"maxOutputTokens": 150}
             },
@@ -102,3 +93,18 @@ async def get_chat_history(session_id: str):
         "history": [],
         "message_count": 0
     }
+
+@app.get("/")
+async def root():
+    return {
+        "message": "Bio Band AI Health Assistant",
+        "version": "1.0.0",
+        "endpoints": {
+            "POST /chat": "Send health questions to AI",
+            "GET /chat/{session_id}": "Get chat history"
+        }
+    }
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8001)
