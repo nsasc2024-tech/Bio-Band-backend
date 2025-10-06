@@ -1,9 +1,25 @@
 # Bio Band Backend API
 
-Complete backend system for Bio Band health monitoring wearable device.
+**Complete backend system for Bio Band health monitoring wearable device.**
 
 ## 🚀 Live API
 **Base URL**: `https://bio-band-backend.vercel.app`
+
+## 🎯 Quick Start
+
+### **Test API Endpoints**
+```bash
+# Get API status
+curl https://bio-band-backend.vercel.app/
+
+# Get all users
+curl https://bio-band-backend.vercel.app/users/
+
+# AI Health Chat
+curl -X POST https://bio-band-backend.vercel.app/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "I have a headache", "session_id": "test"}'
+```
 
 ## 🤖 Features
 - **AI Health Assistant** - Gemini-powered health advice
@@ -12,112 +28,102 @@ Complete backend system for Bio Band health monitoring wearable device.
 - **Device Management** - Bio Band device pairing and tracking
 - **Real-time Data** - Live health metrics from wearable devices
 
-## 📊 Database
-- **Turso Database** - Global edge SQLite database
-- **3 Tables**: users, devices, health_metrics
-- **Real-time Storage** - Instant data synchronization
-
 ## 🛠️ Tech Stack
 - **FastAPI** - Modern Python web framework
 - **Turso** - Distributed SQLite database
 - **Gemini AI** - Google's advanced AI model
 - **Vercel** - Serverless deployment platform
 
+## 📊 Database
+- **Turso Database** - Global edge SQLite database
+- **3 Tables**: users, devices, health_metrics
+- **Current Data**: 15+ users, 13+ health records
+- **Real-time Storage** - Instant data synchronization
+
 ## 📱 API Endpoints
 
-### AI Chat
-- `POST /chat` - Send health questions to AI
-- `GET /chat/{session_id}` - Get chat history
+| Endpoint | Method | Description |
+|----------|--------|--------------|
+| `/` | GET | API status and info |
+| `/users/` | GET/POST | User management |
+| `/users/{id}` | GET | Get specific user |
+| `/devices/` | GET/POST | Device management |
+| `/health-metrics/` | GET/POST | Health data |
+| `/health-metrics/device/{id}` | GET | Device-specific data |
+| `/chat` | POST | AI health assistant |
+| `/chat/{session_id}` | GET | Chat history |
 
-### Health Data
-- `GET /health-metrics/` - Get all health data
-- `POST /health-metrics/` - Add new health data
-- `GET /health-metrics/device/{device_id}` - Get device-specific data
+## 📁 Project Structure
 
-### User Management
-- `GET /users/` - Get all users
-- `POST /users/` - Create new user
-
-### Device Management
-- `GET /devices/` - Get all devices
-- `POST /devices/` - Register new device
-
-## 🧪 Test API
-
-### AI Health Chat
-```bash
-curl -X POST https://bio-band-backend.vercel.app/chat \
-  -H "Content-Type: application/json" \
-  -d '{"message": "I have a headache", "session_id": "user123"}'
 ```
-
-### Add Health Data
-```bash
-curl -X POST https://bio-band-backend.vercel.app/health-metrics/ \
-  -H "Content-Type: application/json" \
-  -d '{
-    "device_id": "BAND001",
-    "timestamp": "2025-01-16T10:30:00Z",
-    "heart_rate": 78,
-    "spo2": 97,
-    "temperature": 36.5,
-    "steps": 1250,
-    "calories": 55,
-    "activity": "Walking"
-  }'
+bio-band-backend/
+├── src/main.py              # Main application
+├── docs/                    # Documentation
+├── database/schemas/        # Database schemas
+├── main.py                  # Deployment file
+├── requirements.txt         # Dependencies
+└── vercel.json             # Deployment config
 ```
 
 ## 🔧 Local Development
 
-1. **Clone repository**
 ```bash
-git clone https://github.com/your-username/bio-band-backend.git
-cd bio-band-backend
-```
+# Clone repository
+git clone https://github.com/nsasc2024-tech/Bio-Band-backend.git
+cd Bio-Band-backend
 
-2. **Install dependencies**
-```bash
+# Install dependencies
 pip install -r requirements.txt
-```
 
-3. **Set environment variables**
-```bash
-# Create .env file
-TURSO_DB_URL=your_turso_database_url
-TURSO_DB_TOKEN=your_turso_auth_token
-GEMINI_API_KEY=your_gemini_api_key
-```
+# Set environment variables in .env
+TURSO_DB_URL=your_database_url
+TURSO_DB_TOKEN=your_database_token
+GEMINI_API_KEY=your_gemini_key
 
-4. **Run locally**
-```bash
+# Run locally
 python main.py
 ```
 
+## 📚 Documentation
+
+- **[API Documentation](docs/api/API_DOCUMENTATION.md)** - Complete API reference
+- **[AI Chat Guide](docs/api/AI_CHAT_DOCUMENTATION.md)** - AI assistant endpoints
+- **[Database Schema](DATABASE_DOCUMENTATION.md)** - Complete database details
+- **[Project Structure](PROJECT_STRUCTURE.md)** - Code organization
+
 ## 🌍 Deployment
+
 - **Platform**: Vercel
 - **Auto-deploy**: Connected to GitHub main branch
 - **Environment**: Production-ready with global CDN
+- **Status**: ✅ Live and operational
 
 ## 📈 Current Status
-- ✅ **15 Users** registered
-- ✅ **13 Health Records** stored
+
+- ✅ **15+ Users** registered
+- ✅ **13+ Health Records** stored
 - ✅ **AI Chat** working with Gemini
 - ✅ **Global Edge** database with Turso
 - ✅ **Production Ready** on Vercel
 
 ## 🔐 Security
+
 - HTTPS only
 - JWT authentication for database
 - CORS enabled for web/mobile apps
 - Environment variables for sensitive data
+- Input validation and sanitization
 
 ## 📞 Integration
+
 Perfect for integration with:
-- Mobile health apps (React Native, Flutter)
-- Web dashboards (React, Vue, Angular)
-- IoT devices (Arduino, Raspberry Pi)
-- Wearable devices (Bio Band hardware)
+- **Mobile Apps**: React Native, Flutter
+- **Web Dashboards**: React, Vue, Angular
+- **IoT Devices**: Arduino, Raspberry Pi
+- **Wearable Devices**: Bio Band hardware
 
 ---
 
-**Built for Bio Band Health Monitoring System**
+**🏥 Built for Bio Band Health Monitoring System**  
+**🔗 Repository**: https://github.com/nsasc2024-tech/Bio-Band-backend  
+**📊 Live API**: https://bio-band-backend.vercel.app

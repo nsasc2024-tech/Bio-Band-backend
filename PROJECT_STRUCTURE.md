@@ -2,103 +2,65 @@
 
 ```
 bio-band-backend/
-├── app/                          # Main application code
-│   ├── __init__.py
-│   ├── api/                      # API route handlers
-│   │   └── __init__.py
-│   ├── models/                   # Pydantic data models
-│   │   ├── __init__.py
-│   │   ├── user.py              # User models
-│   │   ├── device.py            # Device models
-│   │   ├── health.py            # Health metric models
-│   │   └── chat.py              # Chat models
-│   └── services/                 # Business logic services
-│       ├── __init__.py
-│       ├── database.py          # Database operations
-│       └── ai_service.py        # AI/Gemini integration
-│
-├── config/                       # Configuration files
-│   ├── __init__.py
-│   ├── settings.py              # App settings and environment variables
-│   ├── database/                # Database configurations
-│   └── ai/                      # AI configurations
-│
-├── database/                     # Database related files
-│   ├── migrations/              # Database migration scripts
-│   └── schemas/                 # Database schema files
-│       └── minimal_db.sql       # Main database schema
-│
-├── docs/                        # Documentation
-│   ├── README.md               # Project overview
-│   ├── api/                    # API documentation
+├── src/
+│   └── main.py                 # Main FastAPI application
+├── docs/
+│   ├── api/
 │   │   ├── API_DOCUMENTATION.md
 │   │   └── AI_CHAT_DOCUMENTATION.md
-│   └── deployment/             # Deployment guides
-│
-├── scripts/                     # Utility scripts
-│   ├── setup/                  # Setup scripts
-│   │   └── create_chat_table.py
-│   └── testing/                # Testing scripts
-│       ├── check_database.py
-│       ├── check_turso_data.py
-│       ├── test_health_queries.py
-│       └── test_vercel_api.py
-│
-├── tests/                       # Test files
-├── utils/                       # Utility functions
-├── main.py                      # FastAPI application entry point
-├── requirements.txt             # Python dependencies
-├── vercel.json                 # Vercel deployment config
-├── .env                        # Environment variables
-├── .gitignore                  # Git ignore rules
-└── PROJECT_STRUCTURE.md        # This file
+│   └── README.md
+├── database/
+│   └── schemas/
+│       ├── minimal_db.sql
+│       └── chat_messages.sql
+├── .github/
+│   └── workflows/
+│       └── turso-deploy.yml
+├── .vercel/
+│   ├── project.json
+│   └── README.txt
+├── main.py                     # Root main.py for Vercel deployment
+├── requirements.txt            # Python dependencies
+├── vercel.json                # Vercel deployment config
+├── .env                       # Environment variables
+├── .gitignore                 # Git ignore rules
+├── README.md                  # Project overview
+├── DATABASE_DOCUMENTATION.md  # Complete database docs
+└── PROJECT_STRUCTURE.md       # This file
 ```
 
-## 📁 Folder Descriptions
+## 📁 Directory Descriptions
 
-### `/app` - Main Application
-- **`/api`**: FastAPI route handlers and endpoints
-- **`/models`**: Pydantic models for request/response validation
-- **`/services`**: Business logic and external service integrations
+### **src/**
+- Contains the main application code
+- `main.py` - FastAPI application with all endpoints
 
-### `/config` - Configuration
-- **`settings.py`**: Centralized configuration management
-- **`/database`**: Database-specific configurations
-- **`/ai`**: AI service configurations
+### **docs/**
+- All project documentation
+- API references and guides
+- Database documentation
 
-### `/database` - Database Management
-- **`/migrations`**: Database migration scripts
-- **`/schemas`**: SQL schema definitions
+### **database/**
+- Database schemas and migration files
+- SQL table definitions
 
-### `/docs` - Documentation
-- **`/api`**: API documentation and guides
-- **`/deployment`**: Deployment instructions
+### **Root Files**
+- `main.py` - Copy for Vercel deployment
+- `requirements.txt` - Python package dependencies
+- `vercel.json` - Deployment configuration
+- `.env` - Environment variables (not in git)
 
-### `/scripts` - Utility Scripts
-- **`/setup`**: Initial setup and configuration scripts
-- **`/testing`**: Testing and validation scripts
+## 🚀 Deployment Structure
 
-### `/tests` - Test Suite
-- Unit tests
-- Integration tests
-- API tests
+The project is structured for easy deployment:
+- **Vercel**: Uses root `main.py`
+- **GitHub**: Source code in `src/`
+- **Documentation**: Organized in `docs/`
+- **Database**: Schemas in `database/`
 
-### `/utils` - Utilities
-- Helper functions
-- Common utilities
+## 🔧 Development Workflow
 
-## 🚀 Key Files
-
-- **`main.py`**: FastAPI application entry point
-- **`requirements.txt`**: Python package dependencies
-- **`vercel.json`**: Vercel deployment configuration
-- **`.env`**: Environment variables (not in git)
-- **`.gitignore`**: Git ignore patterns
-
-## 📊 Current Status
-
-✅ **Structured Organization**: Clean folder hierarchy
-✅ **Separated Concerns**: Models, services, and API routes separated
-✅ **Documentation**: Organized in dedicated docs folder
-✅ **Scripts**: Setup and testing scripts organized
-✅ **Configuration**: Centralized configuration management
+1. **Edit**: Modify `src/main.py`
+2. **Sync**: Copy changes to root `main.py`
+3. **Deploy**: Push to GitHub for auto-deployment
+4. **Document**: Update docs as needed
