@@ -57,10 +57,9 @@ curl -X POST https://bio-band-backend.vercel.app/chat \
 
 ```
 bio-band-backend/
-├── src/main.py              # Main application
 ├── docs/                    # Documentation
 ├── database/schemas/        # Database schemas
-├── main.py                  # Deployment file
+├── main.py                  # Main FastAPI application
 ├── requirements.txt         # Dependencies
 └── vercel.json             # Deployment config
 ```

@@ -2,8 +2,6 @@
 
 ```
 bio-band-backend/
-├── src/
-│   └── main.py                 # Main FastAPI application
 ├── docs/
 │   ├── api/
 │   │   ├── API_DOCUMENTATION.md
@@ -19,7 +17,7 @@ bio-band-backend/
 ├── .vercel/
 │   ├── project.json
 │   └── README.txt
-├── main.py                     # Root main.py for Vercel deployment
+├── main.py                     # Main FastAPI application
 ├── requirements.txt            # Python dependencies
 ├── vercel.json                # Vercel deployment config
 ├── .env                       # Environment variables
@@ -31,9 +29,11 @@ bio-band-backend/
 
 ## 📁 Directory Descriptions
 
-### **src/**
-- Contains the main application code
-- `main.py` - FastAPI application with all endpoints
+### **Root Files**
+- `main.py` - Main FastAPI application with all endpoints
+- `requirements.txt` - Python package dependencies
+- `vercel.json` - Deployment configuration
+- `.env` - Environment variables (not in git)
 
 ### **docs/**
 - All project documentation
@@ -44,23 +44,18 @@ bio-band-backend/
 - Database schemas and migration files
 - SQL table definitions
 
-### **Root Files**
-- `main.py` - Copy for Vercel deployment
-- `requirements.txt` - Python package dependencies
-- `vercel.json` - Deployment configuration
-- `.env` - Environment variables (not in git)
+
 
 ## 🚀 Deployment Structure
 
 The project is structured for easy deployment:
 - **Vercel**: Uses root `main.py`
-- **GitHub**: Source code in `src/`
+- **GitHub**: All source code in root
 - **Documentation**: Organized in `docs/`
 - **Database**: Schemas in `database/`
 
 ## 🔧 Development Workflow
 
-1. **Edit**: Modify `src/main.py`
-2. **Sync**: Copy changes to root `main.py`
-3. **Deploy**: Push to GitHub for auto-deployment
-4. **Document**: Update docs as needed
+1. **Edit**: Modify `main.py`
+2. **Deploy**: Push to GitHub for auto-deployment
+3. **Document**: Update docs as needed
