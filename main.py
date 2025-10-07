@@ -858,17 +858,12 @@ def get_device_report(device_id: str):
         return {"success": False, "error": str(e), "device_id": device_id}
 
 @app.get("/reports/recently-added/{device_id}")
-def get_recently_added_device_data(device_id: str, minutes: int = 30):
+def get_recently_added_device_data(device_id: str, limit: int = 1):
     try:
-        from datetime import datetime, timedelta
-        
-        # Calculate time threshold
-        time_threshold = (datetime.now() - timedelta(minutes=minutes)).isoformat()
-        
-        # Get recently added health metrics for specific device
+        # Get most recent health metrics for specific device
         result = execute_turso_sql(
-            "SELECT id, heart_rate, spo2, temperature, steps, calories, activity, timestamp FROM health_metrics WHERE device_id = ? AND timestamp >= ? ORDER BY timestamp DESC",
-            [device_id, time_threshold]
+            "SELECT id, heart_rate, spo2, temperature, steps, calories, activity, timestamp FROM health_metrics WHERE device_id = ? ORDER BY id DESC LIMIT ?",
+            [device_id, limit]
         )
         
         recent_data = []
@@ -921,7 +916,6 @@ def get_recently_added_device_data(device_id: str, minutes: int = 30):
         return {
             "success": True,
             "device_id": device_id,
-            "time_period": f"Last {minutes} minutes",
             "generated_at": datetime.now().isoformat(),
             "count": len(recent_data),
             "recently_added_data": recent_data
