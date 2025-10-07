@@ -100,6 +100,7 @@ def root():
             "GET /health-status/{device_id}": "Get health status analysis",
             "GET /dashboard/{user_id}": "Get user dashboard with all devices",
             "GET /reports/recent/{hours}": "Get recent data report (default 24 hours)",
+            "GET /reports/device/{device_id}/recent": "Get recent data report for specific device",
             "GET /reports/latest-entries/{limit}": "Get latest entries (default 10)",
             "POST /chat": "AI Health Assistant",
             "GET /chat/{session_id}": "Get chat history"
@@ -626,6 +627,113 @@ def get_recent_data_report(hours: int = 24):
         
     except Exception as e:
         return {"success": False, "error": str(e)}
+
+@app.get("/reports/device/{device_id}/recent")
+def get_device_recent_report(device_id: str, limit: int = 5):
+    try:
+        # Get recent health metrics for specific device
+        result = execute_turso_sql(
+            "SELECT id, heart_rate, spo2, temperature, steps, calories, activity, timestamp FROM health_metrics WHERE device_id = ? ORDER BY id DESC LIMIT ?",
+            [device_id, limit]
+        )
+        
+        if not (result.get("results") and result["results"][0].get("response", {}).get("result", {}).get("rows")):
+            return {
+                "success": False,
+                "device_id": device_id,
+                "message": "No recent data found for this device"
+            }
+        
+        rows = result["results"][0]["response"]["result"]["rows"]
+        
+        recent_data = []
+        total_steps = 0
+        total_calories = 0
+        heart_rates = []
+        spo2_values = []
+        temperatures = []
+        
+        for row in rows:
+            record_id = row[0]["value"] if isinstance(row[0], dict) else str(row[0])
+            heart_rate = int(row[1]["value"]) if isinstance(row[1], dict) and row[1]["value"] else row[1]
+            spo2 = int(row[2]["value"]) if isinstance(row[2], dict) and row[2]["value"] else row[2]
+            temperature = float(row[3]["value"]) if isinstance(row[3], dict) and row[3]["value"] else row[3]
+            steps = int(row[4]["value"]) if isinstance(row[4], dict) and row[4]["value"] else row[4] or 0
+            calories = int(row[5]["value"]) if isinstance(row[5], dict) and row[5]["value"] else row[5] or 0
+            activity = row[6]["value"] if isinstance(row[6], dict) else row[6]
+            timestamp = row[7]["value"] if isinstance(row[7], dict) else row[7]
+            
+            recent_data.append({
+                "id": record_id,
+                "heart_rate": heart_rate,
+                "spo2": spo2,
+                "temperature": temperature,
+                "steps": steps,
+                "calories": calories,
+                "activity": activity,
+                "timestamp": timestamp
+            })
+            
+            total_steps += steps
+            total_calories += calories
+            
+            if heart_rate:
+                heart_rates.append(heart_rate)
+            if spo2:
+                spo2_values.append(spo2)
+            if temperature:
+                temperatures.append(temperature)
+        
+        # Calculate averages
+        avg_heart_rate = round(sum(heart_rates) / len(heart_rates), 1) if heart_rates else 0
+        avg_spo2 = round(sum(spo2_values) / len(spo2_values), 1) if spo2_values else 0
+        avg_temperature = round(sum(temperatures) / len(temperatures), 1) if temperatures else 0
+        
+        # Analyze latest record for health status
+        latest_record = recent_data[0] if recent_data else None
+        health_status = "Good"
+        alerts = []
+        
+        if latest_record:
+            hr = latest_record["heart_rate"]
+            sp = latest_record["spo2"]
+            temp = latest_record["temperature"]
+            
+            if hr and (hr < 60 or hr > 100):
+                health_status = "Abnormal Heart Rate"
+                alerts.append(f"Heart rate {hr} BPM is outside normal range (60-100)")
+            
+            if sp and sp < 95:
+                health_status = "Low Oxygen"
+                alerts.append(f"SpO2 {sp}% is below normal (95-100%)")
+            
+            if temp and (temp > 37.5 or temp < 35.5):
+                health_status = "Abnormal Temperature"
+                alerts.append(f"Temperature {temp}°C is outside normal range (36-37°C)")
+        
+        return {
+            "success": True,
+            "device_id": device_id,
+            "generated_at": datetime.now().isoformat(),
+            "summary": {
+                "total_records": len(recent_data),
+                "total_steps": total_steps,
+                "total_calories": total_calories,
+                "avg_heart_rate": avg_heart_rate,
+                "avg_spo2": avg_spo2,
+                "avg_temperature": avg_temperature,
+                "health_status": health_status,
+                "alerts": alerts
+            },
+            "recent_records": recent_data
+        }
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "device_id": device_id
+        }
 
 @app.get("/reports/latest-entries/{limit}")
 def get_latest_entries(limit: int = 10):
