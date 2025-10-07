@@ -99,6 +99,8 @@ def root():
             "POST /health-metrics/": "Add health data",
             "GET /health-status/{device_id}": "Get health status analysis",
             "GET /dashboard/{user_id}": "Get user dashboard with all devices",
+            "GET /reports/recent/{hours}": "Get recent data report (default 24 hours)",
+            "GET /reports/latest-entries/{limit}": "Get latest entries (default 10)",
             "POST /chat": "AI Health Assistant",
             "GET /chat/{session_id}": "Get chat history"
         }
@@ -508,6 +510,160 @@ def get_user_dashboard(user_id: int):
         
     except Exception as e:
         return {"success": False, "error": str(e), "user_id": user_id}
+
+@app.get("/reports/recent/{hours}")
+def get_recent_data_report(hours: int = 24):
+    try:
+        from datetime import datetime, timedelta
+        
+        # Calculate time threshold
+        time_threshold = (datetime.now() - timedelta(hours=hours)).isoformat()
+        
+        # Get recent health metrics
+        health_result = execute_turso_sql(
+            "SELECT device_id, heart_rate, spo2, temperature, steps, calories, activity, timestamp FROM health_metrics WHERE timestamp >= ? ORDER BY timestamp DESC",
+            [time_threshold]
+        )
+        
+        # Get recent users
+        users_result = execute_turso_sql(
+            "SELECT full_name, email, created_at FROM users WHERE created_at >= ? ORDER BY created_at DESC",
+            [time_threshold]
+        )
+        
+        # Get recent devices
+        devices_result = execute_turso_sql(
+            "SELECT device_id, model, status, registered_at FROM devices WHERE registered_at >= ? ORDER BY registered_at DESC",
+            [time_threshold]
+        )
+        
+        report = {
+            "report_period": f"Last {hours} hours",
+            "generated_at": datetime.now().isoformat(),
+            "summary": {
+                "new_health_records": 0,
+                "new_users": 0,
+                "new_devices": 0,
+                "total_steps": 0,
+                "total_calories": 0,
+                "avg_heart_rate": 0,
+                "avg_spo2": 0,
+                "avg_temperature": 0
+            },
+            "recent_health_data": [],
+            "new_users": [],
+            "new_devices": []
+        }
+        
+        # Process health metrics
+        if health_result.get("results") and health_result["results"][0].get("response", {}).get("result", {}).get("rows"):
+            rows = health_result["results"][0]["response"]["result"]["rows"]
+            
+            heart_rates = []
+            spo2_values = []
+            temperatures = []
+            
+            for row in rows:
+                device_id = row[0]["value"] if isinstance(row[0], dict) else row[0]
+                heart_rate = int(row[1]["value"]) if isinstance(row[1], dict) and row[1]["value"] else row[1]
+                spo2 = int(row[2]["value"]) if isinstance(row[2], dict) and row[2]["value"] else row[2]
+                temperature = float(row[3]["value"]) if isinstance(row[3], dict) and row[3]["value"] else row[3]
+                steps = int(row[4]["value"]) if isinstance(row[4], dict) and row[4]["value"] else row[4] or 0
+                calories = int(row[5]["value"]) if isinstance(row[5], dict) and row[5]["value"] else row[5] or 0
+                activity = row[6]["value"] if isinstance(row[6], dict) else row[6]
+                timestamp = row[7]["value"] if isinstance(row[7], dict) else row[7]
+                
+                report["recent_health_data"].append({
+                    "device_id": device_id,
+                    "heart_rate": heart_rate,
+                    "spo2": spo2,
+                    "temperature": temperature,
+                    "steps": steps,
+                    "calories": calories,
+                    "activity": activity,
+                    "timestamp": timestamp
+                })
+                
+                report["summary"]["total_steps"] += steps
+                report["summary"]["total_calories"] += calories
+                
+                if heart_rate:
+                    heart_rates.append(heart_rate)
+                if spo2:
+                    spo2_values.append(spo2)
+                if temperature:
+                    temperatures.append(temperature)
+            
+            report["summary"]["new_health_records"] = len(rows)
+            report["summary"]["avg_heart_rate"] = round(sum(heart_rates) / len(heart_rates), 1) if heart_rates else 0
+            report["summary"]["avg_spo2"] = round(sum(spo2_values) / len(spo2_values), 1) if spo2_values else 0
+            report["summary"]["avg_temperature"] = round(sum(temperatures) / len(temperatures), 1) if temperatures else 0
+        
+        # Process new users
+        if users_result.get("results") and users_result["results"][0].get("response", {}).get("result", {}).get("rows"):
+            rows = users_result["results"][0]["response"]["result"]["rows"]
+            for row in rows:
+                report["new_users"].append({
+                    "full_name": row[0]["value"] if isinstance(row[0], dict) else row[0],
+                    "email": row[1]["value"] if isinstance(row[1], dict) else row[1],
+                    "created_at": row[2]["value"] if isinstance(row[2], dict) else row[2]
+                })
+            report["summary"]["new_users"] = len(rows)
+        
+        # Process new devices
+        if devices_result.get("results") and devices_result["results"][0].get("response", {}).get("result", {}).get("rows"):
+            rows = devices_result["results"][0]["response"]["result"]["rows"]
+            for row in rows:
+                report["new_devices"].append({
+                    "device_id": row[0]["value"] if isinstance(row[0], dict) else row[0],
+                    "model": row[1]["value"] if isinstance(row[1], dict) else row[1],
+                    "status": row[2]["value"] if isinstance(row[2], dict) else row[2],
+                    "registered_at": row[3]["value"] if isinstance(row[3], dict) else row[3]
+                })
+            report["summary"]["new_devices"] = len(rows)
+        
+        return {"success": True, "report": report}
+        
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+@app.get("/reports/latest-entries/{limit}")
+def get_latest_entries(limit: int = 10):
+    try:
+        # Get latest health metrics
+        health_result = execute_turso_sql(
+            "SELECT id, device_id, heart_rate, spo2, temperature, steps, calories, activity, timestamp FROM health_metrics ORDER BY id DESC LIMIT ?",
+            [limit]
+        )
+        
+        latest_data = {
+            "generated_at": datetime.now().isoformat(),
+            "limit": limit,
+            "latest_health_records": []
+        }
+        
+        if health_result.get("results") and health_result["results"][0].get("response", {}).get("result", {}).get("rows"):
+            rows = health_result["results"][0]["response"]["result"]["rows"]
+            
+            for row in rows:
+                latest_data["latest_health_records"].append({
+                    "id": row[0]["value"] if isinstance(row[0], dict) else str(row[0]),
+                    "device_id": row[1]["value"] if isinstance(row[1], dict) else row[1],
+                    "heart_rate": row[2]["value"] if isinstance(row[2], dict) else row[2],
+                    "spo2": row[3]["value"] if isinstance(row[3], dict) else row[3],
+                    "temperature": row[4]["value"] if isinstance(row[4], dict) else row[4],
+                    "steps": row[5]["value"] if isinstance(row[5], dict) else row[5],
+                    "calories": row[6]["value"] if isinstance(row[6], dict) else row[6],
+                    "activity": row[7]["value"] if isinstance(row[7], dict) else row[7],
+                    "timestamp": row[8]["value"] if isinstance(row[8], dict) else row[8]
+                })
+        
+        latest_data["count"] = len(latest_data["latest_health_records"])
+        
+        return {"success": True, "data": latest_data}
+        
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 @app.get("/health")
 def health_check():
