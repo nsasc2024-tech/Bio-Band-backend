@@ -778,19 +778,19 @@ def get_device_report(device_id: str):
         heart_rates = []
         
         for row in rows:
-            hr = int(row[1]["value"]) if isinstance(row[1], dict) and row[1]["value"] else row[1]
-            steps = int(row[4]["value"]) if isinstance(row[4], dict) and row[4]["value"] else row[4] or 0
-            calories = int(row[5]["value"]) if isinstance(row[5], dict) and row[5]["value"] else row[5] or 0
+            hr = int(row[1]["value"]) if isinstance(row[1], dict) and "value" in row[1] and row[1]["value"] else row[1]
+            steps = int(row[4]["value"]) if isinstance(row[4], dict) and "value" in row[4] and row[4]["value"] else row[4] or 0
+            calories = int(row[5]["value"]) if isinstance(row[5], dict) and "value" in row[5] and row[5]["value"] else row[5] or 0
             
             records.append({
-                "id": row[0]["value"] if isinstance(row[0], dict) else str(row[0]),
+                "id": row[0]["value"] if isinstance(row[0], dict) and "value" in row[0] else str(row[0]),
                 "heart_rate": hr,
-                "spo2": row[2]["value"] if isinstance(row[2], dict) else row[2],
-                "temperature": row[3]["value"] if isinstance(row[3], dict) else row[3],
+                "spo2": row[2]["value"] if isinstance(row[2], dict) and "value" in row[2] else row[2],
+                "temperature": row[3]["value"] if isinstance(row[3], dict) and "value" in row[3] else row[3],
                 "steps": steps,
                 "calories": calories,
-                "activity": row[6]["value"] if isinstance(row[6], dict) else row[6],
-                "timestamp": row[7]["value"] if isinstance(row[7], dict) else row[7]
+                "activity": row[6]["value"] if isinstance(row[6], dict) and "value" in row[6] else row[6],
+                "timestamp": row[7]["value"] if isinstance(row[7], dict) and "value" in row[7] else row[7]
             })
             
             total_steps += steps
