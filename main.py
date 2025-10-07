@@ -103,7 +103,7 @@ def root():
             "GET /reports/device/{device_id}/recent": "Get recent data report for specific device",
             "GET /reports/latest-entries/{limit}": "Get latest entries (default 10)",
             "GET /reports/recently-added/{minutes}": "Get recently added data (default 30 min)",
-            "GET /reports/recently-added/{device_id}/{minutes}": "Get recently added data for specific device",
+            "GET /reports/recently-added/{device_id}": "Get recently added data for specific device (default 30 min)",
             "GET /reports/device-report/{device_id}": "Get complete report for specific device",
             "GET /data-validation/health-metrics": "Validate existing health data",
             "POST /data-cleanup/invalid-records": "Remove invalid health records",
@@ -857,7 +857,7 @@ def get_device_report(device_id: str):
     except Exception as e:
         return {"success": False, "error": str(e), "device_id": device_id}
 
-@app.get("/reports/recently-added/{device_id}/{minutes}")
+@app.get("/reports/recently-added/{device_id}")
 def get_recently_added_device_data(device_id: str, minutes: int = 30):
     try:
         from datetime import datetime, timedelta
