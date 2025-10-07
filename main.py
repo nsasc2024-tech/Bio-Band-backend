@@ -808,16 +808,37 @@ def get_device_report(device_id: str):
             total_calories += calories
             if hr: heart_rates.append(hr)
         
+        # Health analysis
+        latest_record = records[0] if records else None
+        health_status = "Good"
+        issues = []
+        
+        if latest_record:
+            hr = latest_record["heart_rate"]
+            spo2 = latest_record["spo2"]
+            temp = latest_record["temperature"]
+            
+            if hr and (hr < 60 or hr > 100):
+                health_status = "Poor"
+                issues.append(f"Heart rate {hr} BPM abnormal")
+            
+            if spo2 and spo2 < 95:
+                health_status = "Poor"
+                issues.append(f"SpO2 {spo2}% low")
+            
+            if temp and (temp > 37.5 or temp < 35.5):
+                health_status = "Poor"
+                issues.append(f"Temperature {temp}°C abnormal")
+        
         return {
             "success": True,
             "device_id": device_id,
+            "health_status": health_status,
+            "issues": issues,
             "summary": {
                 "total_records": len(records),
-                "total_steps": total_steps,
-                "total_calories": total_calories,
                 "avg_heart_rate": round(sum(heart_rates) / len(heart_rates), 1) if heart_rates else 0
-            },
-            "records": records
+            }
         }
         
     except Exception as e:
