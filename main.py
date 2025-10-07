@@ -779,8 +779,14 @@ def get_device_report(device_id: str):
         
         for row in rows:
             hr = int(row[1]["value"]) if isinstance(row[1], dict) and "value" in row[1] and row[1]["value"] else row[1]
-            steps = int(row[4]["value"]) if isinstance(row[4], dict) and "value" in row[4] and row[4]["value"] else row[4] or 0
-            calories = int(row[5]["value"]) if isinstance(row[5], dict) and "value" in row[5] and row[5]["value"] else row[5] or 0
+            
+            # Handle steps - ensure it's an integer
+            steps_val = row[4]["value"] if isinstance(row[4], dict) and "value" in row[4] else row[4]
+            steps = int(steps_val) if steps_val and str(steps_val).isdigit() else 0
+            
+            # Handle calories - ensure it's an integer
+            calories_val = row[5]["value"] if isinstance(row[5], dict) and "value" in row[5] else row[5]
+            calories = int(calories_val) if calories_val and str(calories_val).isdigit() else 0
             
             records.append({
                 "id": row[0]["value"] if isinstance(row[0], dict) and "value" in row[0] else str(row[0]),
