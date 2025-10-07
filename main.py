@@ -834,10 +834,12 @@ def get_device_report(device_id: str):
             "success": True,
             "device_id": device_id,
             "health_status": health_status,
-            "issues": issues,
-            "summary": {
-                "total_records": len(records),
-                "avg_heart_rate": round(sum(heart_rates) / len(heart_rates), 1) if heart_rates else 0
+            "issues": issues if issues else ["No health issues detected"],
+            "latest_reading": {
+                "heart_rate": latest_record["heart_rate"] if latest_record else None,
+                "spo2": latest_record["spo2"] if latest_record else None,
+                "temperature": latest_record["temperature"] if latest_record else None,
+                "timestamp": latest_record["timestamp"] if latest_record else None
             }
         }
         
