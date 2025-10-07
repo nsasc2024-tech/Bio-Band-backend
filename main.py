@@ -103,6 +103,7 @@ def root():
             "GET /reports/device/{device_id}/recent": "Get recent data report for specific device",
             "GET /reports/latest-entries/{limit}": "Get latest entries (default 10)",
             "GET /reports/recently-added/{minutes}": "Get recently added data (default 30 min)",
+            "GET /reports/recently-added/{device_id}/{minutes}": "Get recently added data for specific device",
             "GET /reports/device-report/{device_id}": "Get complete report for specific device",
             "GET /data-validation/health-metrics": "Validate existing health data",
             "POST /data-cleanup/invalid-records": "Remove invalid health records",
@@ -851,6 +852,79 @@ def get_device_report(device_id: str):
                 "temperature": latest_record["temperature"] if latest_record else None,
                 "timestamp": latest_record["timestamp"] if latest_record else None
             }
+        }
+        
+    except Exception as e:
+        return {"success": False, "error": str(e), "device_id": device_id}
+
+@app.get("/reports/recently-added/{device_id}/{minutes}")
+def get_recently_added_device_data(device_id: str, minutes: int = 30):
+    try:
+        from datetime import datetime, timedelta
+        
+        # Calculate time threshold
+        time_threshold = (datetime.now() - timedelta(minutes=minutes)).isoformat()
+        
+        # Get recently added health metrics for specific device
+        result = execute_turso_sql(
+            "SELECT id, heart_rate, spo2, temperature, steps, calories, activity, timestamp FROM health_metrics WHERE device_id = ? AND timestamp >= ? ORDER BY timestamp DESC",
+            [device_id, time_threshold]
+        )
+        
+        recent_data = []
+        if result.get("results") and result["results"][0].get("response", {}).get("result", {}).get("rows"):
+            rows = result["results"][0]["response"]["result"]["rows"]
+            
+            for row in rows:
+                # Health analysis for each record
+                hr = int(row[1]["value"]) if isinstance(row[1], dict) and "value" in row[1] and row[1]["value"] else (row[1] if row[1] and str(row[1]).isdigit() else 0)
+                
+                try:
+                    spo2 = int(row[2]["value"]) if isinstance(row[2], dict) and "value" in row[2] else (int(row[2]) if row[2] and str(row[2]).isdigit() else 0)
+                except:
+                    spo2 = 0
+                
+                try:
+                    temp = float(row[3]["value"]) if isinstance(row[3], dict) and "value" in row[3] else (float(row[3]) if row[3] else 0)
+                except:
+                    temp = 0
+                
+                # Determine health status for this record
+                health_status = "Good"
+                issues = []
+                
+                if hr and (hr < 60 or hr > 100):
+                    health_status = "Poor"
+                    issues.append(f"Heart rate {hr} BPM abnormal")
+                
+                if spo2 and spo2 < 95:
+                    health_status = "Poor"
+                    issues.append(f"SpO2 {spo2}% low")
+                
+                if temp and (temp > 37.5 or temp < 35.5):
+                    health_status = "Poor"
+                    issues.append(f"Temperature {temp}°C abnormal")
+                
+                recent_data.append({
+                    "id": row[0]["value"] if isinstance(row[0], dict) and "value" in row[0] else str(row[0]),
+                    "heart_rate": hr,
+                    "spo2": spo2,
+                    "temperature": temp,
+                    "steps": row[4]["value"] if isinstance(row[4], dict) and "value" in row[4] else row[4],
+                    "calories": row[5]["value"] if isinstance(row[5], dict) and "value" in row[5] else row[5],
+                    "activity": row[6]["value"] if isinstance(row[6], dict) and "value" in row[6] else row[6],
+                    "timestamp": row[7]["value"] if isinstance(row[7], dict) and "value" in row[7] else row[7],
+                    "health_status": health_status,
+                    "issues": issues if issues else ["No health issues detected"]
+                })
+        
+        return {
+            "success": True,
+            "device_id": device_id,
+            "time_period": f"Last {minutes} minutes",
+            "generated_at": datetime.now().isoformat(),
+            "count": len(recent_data),
+            "recently_added_data": recent_data
         }
         
     except Exception as e:
