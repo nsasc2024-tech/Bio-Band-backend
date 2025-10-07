@@ -59,11 +59,11 @@ app.add_middleware(
 class HealthMetricCreate(BaseModel):
     device_id: str
     timestamp: str
-    heart_rate: Optional[int] = None
-    spo2: Optional[int] = None
-    temperature: Optional[float] = None
-    steps: Optional[int] = None
-    calories: Optional[int] = None
+    heart_rate: Optional[int] = None  # Valid: 30-220 BPM
+    spo2: Optional[int] = None        # Valid: 70-100%
+    temperature: Optional[float] = None  # Valid: 30-45°C
+    steps: Optional[int] = None       # Valid: 0-100000
+    calories: Optional[int] = None    # Valid: 0-10000
     activity: Optional[str] = "Walking"
 
 class UserCreate(BaseModel):
@@ -96,12 +96,16 @@ def root():
             "POST /devices/": "Create new device",
             "GET /health-metrics/": "Get all health data",
             "GET /health-metrics/device/{device_id}": "Get health data by device",
-            "POST /health-metrics/": "Add health data",
+            "POST /health-metrics/": "Add health data (with validation)",
             "GET /health-status/{device_id}": "Get health status analysis",
             "GET /dashboard/{user_id}": "Get user dashboard with all devices",
             "GET /reports/recent/{hours}": "Get recent data report (default 24 hours)",
             "GET /reports/device/{device_id}/recent": "Get recent data report for specific device",
             "GET /reports/latest-entries/{limit}": "Get latest entries (default 10)",
+            "GET /reports/recently-added/{minutes}": "Get recently added data (default 30 min)",
+            "GET /reports/device-report/{device_id}": "Get complete report for specific device",
+            "GET /data-validation/health-metrics": "Validate existing health data",
+            "POST /data-cleanup/invalid-records": "Remove invalid health records",
             "POST /chat": "AI Health Assistant",
             "GET /chat/{session_id}": "Get chat history"
         }
@@ -265,6 +269,27 @@ def get_health_metrics_by_device(device_id: str):
 @app.post("/health-metrics/")
 def add_health_metric(data: HealthMetricCreate):
     try:
+        # Validate health metrics
+        validation_errors = []
+        
+        if data.heart_rate is not None and (data.heart_rate < 30 or data.heart_rate > 220):
+            validation_errors.append(f"Invalid heart rate: {data.heart_rate} (valid range: 30-220 BPM)")
+        
+        if data.spo2 is not None and (data.spo2 < 70 or data.spo2 > 100):
+            validation_errors.append(f"Invalid SpO2: {data.spo2} (valid range: 70-100%)")
+        
+        if data.temperature is not None and (data.temperature < 30.0 or data.temperature > 45.0):
+            validation_errors.append(f"Invalid temperature: {data.temperature} (valid range: 30-45°C)")
+        
+        if data.steps is not None and (data.steps < 0 or data.steps > 100000):
+            validation_errors.append(f"Invalid steps: {data.steps} (valid range: 0-100000)")
+        
+        if data.calories is not None and (data.calories < 0 or data.calories > 10000):
+            validation_errors.append(f"Invalid calories: {data.calories} (valid range: 0-10000)")
+        
+        if validation_errors:
+            return {"success": False, "message": "Validation failed", "errors": validation_errors}
+        
         # First, ensure the device exists or create it
         device_check = execute_turso_sql("SELECT id FROM devices WHERE device_id = ?", [data.device_id])
         
@@ -735,6 +760,100 @@ def get_device_recent_report(device_id: str, limit: int = 5):
             "device_id": device_id
         }
 
+@app.get("/reports/device-report/{device_id}")
+def get_device_report(device_id: str):
+    try:
+        result = execute_turso_sql(
+            "SELECT id, heart_rate, spo2, temperature, steps, calories, activity, timestamp FROM health_metrics WHERE device_id = ? ORDER BY timestamp DESC",
+            [device_id]
+        )
+        
+        if not (result.get("results") and result["results"][0].get("response", {}).get("result", {}).get("rows")):
+            return {"success": False, "device_id": device_id, "message": "No data found"}
+        
+        rows = result["results"][0]["response"]["result"]["rows"]
+        records = []
+        total_steps = 0
+        total_calories = 0
+        heart_rates = []
+        
+        for row in rows:
+            hr = int(row[1]["value"]) if isinstance(row[1], dict) and row[1]["value"] else row[1]
+            steps = int(row[4]["value"]) if isinstance(row[4], dict) and row[4]["value"] else row[4] or 0
+            calories = int(row[5]["value"]) if isinstance(row[5], dict) and row[5]["value"] else row[5] or 0
+            
+            records.append({
+                "id": row[0]["value"] if isinstance(row[0], dict) else str(row[0]),
+                "heart_rate": hr,
+                "spo2": row[2]["value"] if isinstance(row[2], dict) else row[2],
+                "temperature": row[3]["value"] if isinstance(row[3], dict) else row[3],
+                "steps": steps,
+                "calories": calories,
+                "activity": row[6]["value"] if isinstance(row[6], dict) else row[6],
+                "timestamp": row[7]["value"] if isinstance(row[7], dict) else row[7]
+            })
+            
+            total_steps += steps
+            total_calories += calories
+            if hr: heart_rates.append(hr)
+        
+        return {
+            "success": True,
+            "device_id": device_id,
+            "summary": {
+                "total_records": len(records),
+                "total_steps": total_steps,
+                "total_calories": total_calories,
+                "avg_heart_rate": round(sum(heart_rates) / len(heart_rates), 1) if heart_rates else 0
+            },
+            "records": records
+        }
+        
+    except Exception as e:
+        return {"success": False, "error": str(e), "device_id": device_id}
+
+@app.get("/reports/recently-added/{minutes}")
+def get_recently_added_data(minutes: int = 30):
+    try:
+        from datetime import datetime, timedelta
+        
+        # Calculate time threshold
+        time_threshold = (datetime.now() - timedelta(minutes=minutes)).isoformat()
+        
+        # Get recently added health metrics
+        result = execute_turso_sql(
+            "SELECT id, device_id, heart_rate, spo2, temperature, steps, calories, activity, timestamp FROM health_metrics WHERE timestamp >= ? ORDER BY timestamp DESC",
+            [time_threshold]
+        )
+        
+        recent_data = []
+        if result.get("results") and result["results"][0].get("response", {}).get("result", {}).get("rows"):
+            rows = result["results"][0]["response"]["result"]["rows"]
+            
+            for row in rows:
+                recent_data.append({
+                    "id": row[0]["value"] if isinstance(row[0], dict) else str(row[0]),
+                    "device_id": row[1]["value"] if isinstance(row[1], dict) else row[1],
+                    "heart_rate": row[2]["value"] if isinstance(row[2], dict) else row[2],
+                    "spo2": row[3]["value"] if isinstance(row[3], dict) else row[3],
+                    "temperature": row[4]["value"] if isinstance(row[4], dict) else row[4],
+                    "steps": row[5]["value"] if isinstance(row[5], dict) else row[5],
+                    "calories": row[6]["value"] if isinstance(row[6], dict) else row[6],
+                    "activity": row[7]["value"] if isinstance(row[7], dict) else row[7],
+                    "timestamp": row[8]["value"] if isinstance(row[8], dict) else row[8]
+                })
+        
+        return {
+            "success": True,
+            "time_period": f"Last {minutes} minutes",
+            "generated_at": datetime.now().isoformat(),
+            "count": len(recent_data),
+            "recently_added_data": recent_data
+        }
+        
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
 @app.get("/reports/latest-entries/{limit}")
 def get_latest_entries(limit: int = 10):
     try:
@@ -769,6 +888,23 @@ def get_latest_entries(limit: int = 10):
         latest_data["count"] = len(latest_data["latest_health_records"])
         
         return {"success": True, "data": latest_data}
+        
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+@app.post("/data-cleanup/invalid-records")
+def cleanup_invalid_data():
+    try:
+        # Delete records with invalid heart rate
+        execute_turso_sql("DELETE FROM health_metrics WHERE heart_rate < 30 OR heart_rate > 220")
+        
+        # Delete records with invalid SpO2
+        execute_turso_sql("DELETE FROM health_metrics WHERE spo2 < 70 OR spo2 > 100")
+        
+        # Delete records with invalid temperature
+        execute_turso_sql("DELETE FROM health_metrics WHERE temperature < 30.0 OR temperature > 45.0")
+        
+        return {"success": True, "message": "Invalid health records removed"}
         
     except Exception as e:
         return {"success": False, "error": str(e)}
