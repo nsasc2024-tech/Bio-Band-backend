@@ -815,8 +815,18 @@ def get_device_report(device_id: str):
         
         if latest_record:
             hr = latest_record["heart_rate"]
-            spo2 = int(latest_record["spo2"]) if latest_record["spo2"] and str(latest_record["spo2"]).isdigit() else 0
-            temp = float(latest_record["temperature"]) if latest_record["temperature"] and str(latest_record["temperature"]).replace('.', '').isdigit() else 0
+            
+            # Safe conversion for spo2
+            try:
+                spo2 = int(latest_record["spo2"]) if latest_record["spo2"] else 0
+            except:
+                spo2 = 0
+            
+            # Safe conversion for temperature
+            try:
+                temp = float(latest_record["temperature"]) if latest_record["temperature"] else 0
+            except:
+                temp = 0
             
             if hr and (hr < 60 or hr > 100):
                 health_status = "Poor"
