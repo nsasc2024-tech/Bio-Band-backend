@@ -97,6 +97,8 @@ def root():
             "GET /health-metrics/": "Get all health data",
             "GET /health-metrics/device/{device_id}": "Get health data by device",
             "POST /health-metrics/": "Add health data",
+            "GET /health-status/{device_id}": "Get health status analysis",
+            "GET /dashboard/{user_id}": "Get user dashboard with all devices",
             "POST /chat": "AI Health Assistant",
             "GET /chat/{session_id}": "Get chat history"
         }
@@ -345,6 +347,167 @@ async def get_chat_history(session_id: str):
     if session_id in sessions:
         return {"success": True, "session_id": session_id, "history": sessions[session_id], "message_count": len(sessions[session_id])}
     return {"success": True, "session_id": session_id, "history": [], "message_count": 0}
+
+@app.get("/health-status/{device_id}")
+def get_health_status(device_id: str):
+    try:
+        # Get latest health metrics for the device
+        result = execute_turso_sql(
+            "SELECT heart_rate, spo2, temperature, steps, calories, activity, timestamp FROM health_metrics WHERE device_id = ? ORDER BY timestamp DESC LIMIT 1",
+            [device_id]
+        )
+        
+        if not (result.get("results") and result["results"][0].get("response", {}).get("result", {}).get("rows")):
+            return {
+                "success": False,
+                "device_id": device_id,
+                "status": "No data found",
+                "connection_status": "disconnected"
+            }
+        
+        row = result["results"][0]["response"]["result"]["rows"][0]
+        
+        # Extract values
+        heart_rate = int(row[0]["value"]) if isinstance(row[0], dict) and row[0]["value"] else row[0]
+        spo2 = int(row[1]["value"]) if isinstance(row[1], dict) and row[1]["value"] else row[1]
+        temperature = float(row[2]["value"]) if isinstance(row[2], dict) and row[2]["value"] else row[2]
+        steps = int(row[3]["value"]) if isinstance(row[3], dict) and row[3]["value"] else row[3]
+        calories = int(row[4]["value"]) if isinstance(row[4], dict) and row[4]["value"] else row[4]
+        activity = row[5]["value"] if isinstance(row[5], dict) else row[5]
+        timestamp = row[6]["value"] if isinstance(row[6], dict) else row[6]
+        
+        # Analyze health status
+        health_status = "Good"
+        alerts = []
+        
+        # Heart rate analysis
+        if heart_rate:
+            if heart_rate < 60:
+                health_status = "Low Heart Rate"
+                alerts.append("Heart rate is below normal (60-100 BPM)")
+            elif heart_rate > 100:
+                health_status = "High Heart Rate"
+                alerts.append("Heart rate is above normal (60-100 BPM)")
+        
+        # SpO2 analysis
+        if spo2:
+            if spo2 < 95:
+                health_status = "Low Oxygen"
+                alerts.append("Blood oxygen level is below normal (95-100%)")
+        
+        # Temperature analysis
+        if temperature:
+            if temperature > 37.5:
+                health_status = "Fever"
+                alerts.append("Body temperature is elevated (normal: 36-37°C)")
+            elif temperature < 35.5:
+                health_status = "Low Temperature"
+                alerts.append("Body temperature is below normal")
+        
+        # Connection status (if data is recent)
+        from datetime import datetime, timedelta
+        try:
+            last_update = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+            time_diff = datetime.now().replace(tzinfo=last_update.tzinfo) - last_update
+            connection_status = "connected" if time_diff < timedelta(minutes=5) else "disconnected"
+        except:
+            connection_status = "unknown"
+        
+        return {
+            "success": True,
+            "device_id": device_id,
+            "connection_status": connection_status,
+            "health_status": health_status,
+            "alerts": alerts,
+            "current_metrics": {
+                "heart_rate": heart_rate,
+                "spo2": spo2,
+                "temperature": temperature,
+                "steps": steps,
+                "calories": calories,
+                "activity": activity
+            },
+            "last_updated": timestamp,
+            "recommendations": {
+                "heart_rate": "Normal: 60-100 BPM",
+                "spo2": "Normal: 95-100%",
+                "temperature": "Normal: 36-37°C"
+            }
+        }
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "device_id": device_id,
+            "connection_status": "error"
+        }
+
+@app.get("/dashboard/{user_id}")
+def get_user_dashboard(user_id: int):
+    try:
+        # Get user's devices
+        devices_result = execute_turso_sql(
+            "SELECT device_id, model, status FROM devices WHERE user_id = ?",
+            [user_id]
+        )
+        
+        dashboard_data = {
+            "user_id": user_id,
+            "devices": [],
+            "overall_status": "Good",
+            "total_steps_today": 0,
+            "total_calories_today": 0
+        }
+        
+        if devices_result.get("results") and devices_result["results"][0].get("response", {}).get("result", {}).get("rows"):
+            device_rows = devices_result["results"][0]["response"]["result"]["rows"]
+            
+            for device_row in device_rows:
+                device_id = device_row[0]["value"] if isinstance(device_row[0], dict) else device_row[0]
+                model = device_row[1]["value"] if isinstance(device_row[1], dict) else device_row[1]
+                status = device_row[2]["value"] if isinstance(device_row[2], dict) else device_row[2]
+                
+                # Get latest metrics for each device
+                metrics_result = execute_turso_sql(
+                    "SELECT heart_rate, spo2, temperature, steps, calories, activity, timestamp FROM health_metrics WHERE device_id = ? ORDER BY timestamp DESC LIMIT 1",
+                    [device_id]
+                )
+                
+                device_data = {
+                    "device_id": device_id,
+                    "model": model,
+                    "status": status,
+                    "connection_status": "disconnected",
+                    "latest_metrics": None
+                }
+                
+                if metrics_result.get("results") and metrics_result["results"][0].get("response", {}).get("result", {}).get("rows"):
+                    metric_row = metrics_result["results"][0]["response"]["result"]["rows"][0]
+                    
+                    steps = int(metric_row[3]["value"]) if isinstance(metric_row[3], dict) and metric_row[3]["value"] else metric_row[3] or 0
+                    calories = int(metric_row[4]["value"]) if isinstance(metric_row[4], dict) and metric_row[4]["value"] else metric_row[4] or 0
+                    
+                    dashboard_data["total_steps_today"] += steps
+                    dashboard_data["total_calories_today"] += calories
+                    
+                    device_data["latest_metrics"] = {
+                        "heart_rate": int(metric_row[0]["value"]) if isinstance(metric_row[0], dict) and metric_row[0]["value"] else metric_row[0],
+                        "spo2": int(metric_row[1]["value"]) if isinstance(metric_row[1], dict) and metric_row[1]["value"] else metric_row[1],
+                        "temperature": float(metric_row[2]["value"]) if isinstance(metric_row[2], dict) and metric_row[2]["value"] else metric_row[2],
+                        "steps": steps,
+                        "calories": calories,
+                        "activity": metric_row[5]["value"] if isinstance(metric_row[5], dict) else metric_row[5],
+                        "timestamp": metric_row[6]["value"] if isinstance(metric_row[6], dict) else metric_row[6]
+                    }
+                    device_data["connection_status"] = "connected"
+                
+                dashboard_data["devices"].append(device_data)
+        
+        return {"success": True, "dashboard": dashboard_data}
+        
+    except Exception as e:
+        return {"success": False, "error": str(e), "user_id": user_id}
 
 @app.get("/health")
 def health_check():
